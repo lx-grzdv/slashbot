@@ -1,2 +1,2 @@
-worker: python bot.py
-web: python web_app.py
+# Один процесс: бот + веб-панель в одном сервисе — чаты из бота сразу видны в веб-морде
+web: python start_both.py

@@ -17,9 +17,10 @@ except ModuleNotFoundError:
 import pytz
 import json
 
-# Файл для хранения настроек
-SETTINGS_FILE = "bot_settings.json"
-USERS_FILE = "bot_users.json"  # Файл для хранения списка пользователей
+# Каталог данных (из start_both через SLASHBOT_DATA_DIR) и файлы в нём
+_DATA_DIR = os.environ.get('SLASHBOT_DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
+USERS_FILE = os.path.join(_DATA_DIR, "bot_users.json")
+SETTINGS_FILE = os.path.join(_DATA_DIR, "bot_settings.json")
 
 # Глобальные переменные для хранения настроек
 SCHEDULED_CHAT_ID = None

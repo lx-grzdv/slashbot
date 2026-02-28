@@ -57,10 +57,11 @@ def _make_bot():
     )
     return Bot(token=BOT_TOKEN, request=request)
 
-# Файлы для хранения данных
-USERS_FILE = "bot_users.json"
-SCHEDULED_MESSAGES_FILE = "scheduled_messages.json"
-BOT_SETTINGS_FILE = "bot_settings.json"
+# Файлы для хранения данных (каталог задаётся из start_both через SLASHBOT_DATA_DIR)
+_DATA_DIR = os.environ.get('SLASHBOT_DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
+USERS_FILE = os.path.join(_DATA_DIR, "bot_users.json")
+SCHEDULED_MESSAGES_FILE = os.path.join(_DATA_DIR, "scheduled_messages.json")
+BOT_SETTINGS_FILE = os.path.join(_DATA_DIR, "bot_settings.json")
 
 # Планировщик для отложенных сообщений
 scheduler = BackgroundScheduler(timezone=pytz.timezone('Europe/Moscow'))
