@@ -2,7 +2,7 @@ import random
 import asyncio
 import warnings
 import datetime as dt
-from telegram import Update, Bot
+from telegram import Update, Bot, BotCommand
 from telegram.warnings import PTBUserWarning
 # В v20 days уже в формате cron (1=пн, 5=пт) — подавляем предупреждение
 warnings.filterwarnings("ignore", message=".*days.*parameter.*cron", category=PTBUserWarning)
@@ -790,9 +790,26 @@ def main() -> None:
     # Загружаем список пользователей
     load_users()
     
+    # Меню команд в Telegram (при нажатии на "/") — чтобы /chat_id и др. были видны
+    async def _set_bot_commands(app: Application) -> None:
+        await app.bot.set_my_commands([
+            BotCommand("start", "Запуск бота"),
+            BotCommand("help", "Помощь по командам"),
+            BotCommand("chat_id", "Узнать ID чата для веб-панели"),
+            BotCommand("set_schedule", "Включить рассылку в этот чат"),
+            BotCommand("status_schedule", "Статус расписания"),
+            BotCommand("bot_info", "Инфо о боте"),
+        ])
+
     # Создаем приложение с поддержкой JobQueue (увеличенные таймауты для нестабильной сети)
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0, pool_timeout=30.0)
-    application = Application.builder().token(BOT_TOKEN).request(request).build()
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .request(request)
+        .post_init(_set_bot_commands)
+        .build()
+    )
     
     # Сохраняем ссылку на приложение для перезапуска задач
     global APPLICATION
