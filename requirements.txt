@@ -1,0 +1,6 @@
+python-telegram-bot[job-queue]==20.7
+python-dotenv==1.0.0
+pytz==2024.1
+flask==3.0.0
+apscheduler==3.10.4
+

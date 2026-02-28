@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Bot - Управление сообщениями</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        select, textarea, input[type="datetime-local"], input[type="time"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: all 0.3s;
+            font-family: inherit;
+        }
+
+        select:focus, textarea:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background: #ccc;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #667eea;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+        }
+
+        .toggle-switch.active .toggle-slider {
+            transform: translateX(30px);
+        }
+
+        .toggle-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .recurring-options {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .recurring-options.show {
+            display: block;
+        }
+
+        .days-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .day-button {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+
+        .day-button.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .button.secondary {
+            background: #6c757d;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateX(400px);
+            transition: all 0.3s;
+            z-index: 1000;
+            max-width: 300px;
+        }
+
+        .notification.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: #28a745;
+        }
+
+        .notification.error {
+            background: #dc3545;
+        }
+
+        .scheduled-messages {
+            margin-top: 40px;
+        }
+
+        .scheduled-messages h2 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .message-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+
+        .message-card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .message-card p {
+            color: #666;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .message-card .delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+
+        .message-card .delete-btn:hover {
+            background: #c82333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .emoji {
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span class="emoji">🤖</span> Telegram Bot Manager</h1>
+            <p>Управление отправкой сообщений</p>
+        </div>
+
+        <div class="content">
+            <form id="messageForm">
+                <div class="form-group">
+                    <label for="chatSelect"><span class="emoji">💬</span> Выберите чат</label>
+                    <select id="chatSelect" required>
+                        <option value="">Загрузка чатов...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="messageText"><span class="emoji">✍️</span> Сообщение</label>
+                    <textarea id="messageText" placeholder="Введите текст сообщения..." required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="sendTime"><span class="emoji">⏰</span> Время отправки</label>
+                    <input type="datetime-local" id="sendTime">
+                    <small style="color: #666; display: block; margin-top: 5px;">Оставьте пустым для немедленной отправки</small>
+                </div>
+
+                <div class="form-group">
+                    <div class="toggle-container">
+                        <div class="toggle-switch" id="recurringToggle">
+                            <div class="toggle-slider"></div>
+                        </div>
+                        <span class="toggle-label"><span class="emoji">🔄</span> Регулярная отправка</span>
+                    </div>
+                </div>
+
+                <div class="recurring-options" id="recurringOptions">
+                    <div class="form-group">
+                        <label><span class="emoji">📅</span> Дни недели</label>
+                        <div class="days-selector">
+                            <button type="button" class="day-button active" data-day="1">Пн</button>
+                            <button type="button" class="day-button active" data-day="2">Вт</button>
+                            <button type="button" class="day-button active" data-day="3">Ср</button>
+                            <button type="button" class="day-button active" data-day="4">Чт</button>
+                            <button type="button" class="day-button active" data-day="5">Пт</button>
+                            <button type="button" class="day-button" data-day="6">Сб</button>
+                            <button type="button" class="day-button" data-day="0">Вс</button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="recurringTime"><span class="emoji">🕐</span> Время отправки</label>
+                        <input type="time" id="recurringTime" value="10:00">
+                    </div>
+                </div>
+
+                <button type="submit" class="button">
+                    <span class="emoji">🚀</span> Отправить сообщение
+                </button>
+            </form>
+
+            <div class="scheduled-messages">
+                <h2><span class="emoji">📋</span> Запланированные сообщения</h2>
+                <div id="scheduledList" class="loading">Загрузка...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        // Инициализация
+        let chats = [];
+        let isRecurring = false;
+
+        // Загрузка чатов
+        async function loadChats() {
+            try {
+                const response = await fetch('/api/chats');
+                const data = await response.json();
+                chats = data.chats;
+                
+                const select = document.getElementById('chatSelect');
+                select.innerHTML = '<option value="">Выберите чат</option>';
+                
+                chats.forEach(chat => {
+                    const option = document.createElement('option');
+                    option.value = chat.id;
+                    option.textContent = `${chat.title} (${chat.type})`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Ошибка загрузки чатов:', error);
+                showNotification('Ошибка загрузки чатов', 'error');
+            }
+        }
+
+        // Загрузка запланированных сообщений
+        async function loadScheduled() {
+            try {
+                const selectedChat = document.getElementById('chatSelect').value || '';
+                const response = await fetch('/api/scheduled' + (selectedChat ? (`?chat_id=${selectedChat}`) : ''));
+                const data = await response.json();
+                const list = document.getElementById('scheduledList');
+                
+                if (data.messages && data.messages.length > 0) {
+                    list.innerHTML = '';
+                    data.messages.forEach(msg => {
+                        const card = document.createElement('div');
+                        card.className = 'message-card';
+                        
+                        const chatInfo = chats.find(c => c.id === msg.chat_id);
+                        const chatName = chatInfo ? chatInfo.title : `Chat ${msg.chat_id}`;
+                        
+                        let timeInfo = '';
+                        if (msg.is_recurring) {
+                            const days = msg.recurring_pattern.days || [1,2,3,4,5];
+                            const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+                            const dayStr = days.map(d => dayNames[d]).join(', ');
+                            timeInfo = `🔄 Регулярно: ${dayStr} в ${msg.recurring_pattern.time}`;
+                        } else {
+                            const date = new Date(msg.send_time);
+                            timeInfo = `⏰ ${date.toLocaleString('ru-RU')}`;
+                        }
+                        
+                        const isSystem = !!msg.system;
+                        card.innerHTML = `
+                            <h3>💬 ${chatName} ${isSystem ? '<span style="color:#6c757d;font-weight:600;">(системное)</span>' : ''}</h3>
+                            <p><strong>Сообщение:</strong> ${msg.message}</p>
+                            <p>${timeInfo}</p>
+                            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                                <button class="delete-btn" style="background:#17a2b8" onclick="openEdit('${msg.id}', ${isSystem})">✏️ Редактировать</button>
+                                ${isSystem ? '' : `<button class=\"delete-btn\" onclick=\"deleteScheduled('${msg.id}')\">🗑️ Удалить</button>`}
+                            </div>
+                        `;
+                        list.appendChild(card);
+                    });
+                } else {
+                    list.innerHTML = '<p style="color: #666; text-align: center;">Нет запланированных сообщений</p>';
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки запланированных сообщений:', error);
+                document.getElementById('scheduledList').innerHTML = '<p style="color: #dc3545;">Ошибка загрузки</p>';
+            }
+        }
+
+        // Удаление запланированного сообщения
+        async function deleteScheduled(messageId) {
+            if (!confirm('Удалить это сообщение?')) return;
+            
+            try {
+                const response = await fetch(`/api/scheduled/${messageId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showNotification('Сообщение удалено', 'success');
+                    loadScheduled();
+                } else {
+                    showNotification('Ошибка удаления', 'error');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showNotification('Ошибка удаления', 'error');
+            }
+        }
+
+        // Переключатель регулярной отправки
+        document.getElementById('recurringToggle').addEventListener('click', function() {
+            isRecurring = !isRecurring;
+            this.classList.toggle('active');
+            document.getElementById('recurringOptions').classList.toggle('show');
+            
+            const sendTimeInput = document.getElementById('sendTime');
+            if (isRecurring) {
+                sendTimeInput.disabled = true;
+                sendTimeInput.value = '';
+            } else {
+                sendTimeInput.disabled = false;
+            }
+        });
+
+        // Выбор дней недели
+        document.querySelectorAll('.day-button').forEach(button => {
+            button.addEventListener('click', function() {
+                this.classList.toggle('active');
+            });
+        });
+
+        // Отправка формы
+        document.getElementById('messageForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const chatId = document.getElementById('chatSelect').value;
+            const message = document.getElementById('messageText').value;
+            const sendTime = document.getElementById('sendTime').value;
+            
+            if (!chatId || !message) {
+                showNotification('Заполните все поля', 'error');
+                return;
+            }
+            
+            try {
+                if (!isRecurring && !sendTime) {
+                    // Немедленная отправка
+                    const response = await fetch('/api/send', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ chat_id: chatId, message: message })
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        showNotification('Сообщение отправлено!', 'success');
+                        document.getElementById('messageText').value = '';
+                    } else {
+                        showNotification('Ошибка: ' + data.error, 'error');
+                    }
+                } else {
+                    // Запланированная отправка
+                    const payload = {
+                        chat_id: chatId,
+                        message: message,
+                        is_recurring: isRecurring
+                    };
+                    
+                    if (isRecurring) {
+                        const selectedDays = Array.from(document.querySelectorAll('.day-button.active'))
+                            .map(btn => parseInt(btn.dataset.day));
+                        const recurringTime = document.getElementById('recurringTime').value;
+                        
+                        payload.recurring_pattern = {
+                            days: selectedDays,
+                            time: recurringTime
+                        };
+                    } else {
+                        payload.send_time = new Date(sendTime).toISOString();
+                    }
+                    
+                    const response = await fetch('/api/schedule', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const data = await response.json();
+                    if (data.success) {
+                        showNotification('Сообщение запланировано!', 'success');
+                        document.getElementById('messageText').value = '';
+                        document.getElementById('sendTime').value = '';
+                        loadScheduled();
+                    } else {
+                        showNotification('Ошибка: ' + data.error, 'error');
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                showNotification('Ошибка отправки', 'error');
+            }
+        });
+
+        // Редактирование задачи (упрощенная модалка через prompt)
+        function openEdit(messageId, isSystem){
+            const newTime = prompt('Введите новое время (HH:MM). Оставьте пустым, чтобы отменить.');
+            if (!newTime) return;
+            const chatId = document.getElementById('chatSelect').value;
+            const payload = {};
+            if (isSystem){
+                payload.time = newTime;
+                if (messageId === 'sys_daily_maket' && chatId){
+                    payload.chat_id = parseInt(chatId);
+                }
+            } else {
+                payload.is_recurring = true; // если задача была регулярной — меняем время
+                payload.recurring_pattern = { time: newTime };
+            }
+            fetch(`/api/scheduled/${messageId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).then(r=>r.json()).then(data=>{
+                if (data.success){
+                    showNotification('Сохранено', 'success');
+                    loadScheduled();
+                } else {
+                    showNotification('Ошибка: ' + (data.error||'не удалось сохранить'), 'error');
+                }
+            }).catch(()=>showNotification('Ошибка сети', 'error'))
+        }
+
+        // Показ уведомления
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // Загрузка данных при старте
+        loadChats().then(() => loadScheduled());
+
+        // Перезагружать список при смене выбранного чата
+        document.getElementById('chatSelect').addEventListener('change', loadScheduled);
+        
+        // Обновление списка каждые 10 секунд
+        setInterval(loadScheduled, 10000);
+    </script>
+</body>
+</html>
