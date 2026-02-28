@@ -1,10 +1,17 @@
-from flask import Flask, render_template, request, jsonify
-from telegram import Bot
-from config import BOT_TOKEN
-import json
 import os
+# Токен: из config (локально) или из env (Railway и т.п., где config.py нет в репо)
+try:
+    from config import BOT_TOKEN
+except ModuleNotFoundError:
+    BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+
+from flask import Flask, render_template, request, jsonify, Response
+from telegram import Bot
+from telegram.request import HTTPXRequest
+import json
 from datetime import datetime, timedelta
 import asyncio
+from functools import wraps
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -12,7 +19,44 @@ from typing import Optional
 import pytz
 
 app = Flask(__name__)
-bot = Bot(token=BOT_TOKEN)
+
+# Секретный доступ: если заданы WEB_USER и WEB_PASSWORD — веб-морда закрыта паролем
+WEB_USER = os.environ.get('WEB_USER', '')
+WEB_PASSWORD = os.environ.get('WEB_PASSWORD', '')
+
+def _check_auth():
+    """Проверка Basic Auth. Если WEB_PASSWORD не задан — доступ без пароля (локально)."""
+    if not WEB_PASSWORD:
+        return True
+    auth = request.authorization
+    if not auth or not auth.username or not auth.password:
+        return False
+    expected_user = WEB_USER or 'admin'
+    return auth.username == expected_user and auth.password == WEB_PASSWORD
+
+def _auth_response():
+    return Response(
+        'Требуется вход. Укажите логин и пароль.',
+        401,
+        {'WWW-Authenticate': 'Basic realm="Web panel"'}
+    )
+
+@app.before_request
+def require_auth():
+    if _check_auth():
+        return None
+    return _auth_response()
+
+def _make_bot():
+    """Создаёт экземпляр Bot с увеличенным пулом соединений. Отдельный экземпляр на запрос избегает Pool timeout при множественных asyncio.run()."""
+    request = HTTPXRequest(
+        connection_pool_size=16,
+        pool_timeout=30.0,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+    )
+    return Bot(token=BOT_TOKEN, request=request)
 
 # Файлы для хранения данных
 USERS_FILE = "bot_users.json"
@@ -124,6 +168,7 @@ def get_system_schedules(selected_chat_id: Optional[int] = None):
 
 async def send_telegram_message(chat_id, text):
     """Отправляет сообщение в Telegram. Возвращает (success, error_message)."""
+    bot = _make_bot()
     try:
         await bot.send_message(chat_id=chat_id, text=text)
         print(f"✅ Сообщение отправлено в чат {chat_id}")
@@ -137,7 +182,7 @@ def send_message_sync(chat_id, text):
     """Синхронная обертка для отправки сообщения"""
     asyncio.run(send_telegram_message(chat_id, text))
 
-async def get_chat_info(chat_id):
+async def get_chat_info(bot, chat_id):
     """Получает информацию о чате"""
     try:
         chat = await bot.get_chat(chat_id)
@@ -170,12 +215,15 @@ def index():
 def get_chats():
     """Возвращает список чатов"""
     chat_ids = load_chats()
-    chats = []
-    
-    for chat_id in chat_ids:
-        chat_info = asyncio.run(get_chat_info(chat_id))
-        chats.append(chat_info)
-    
+    bot = _make_bot()
+
+    async def fetch_all():
+        result = []
+        for cid in chat_ids:
+            result.append(await get_chat_info(bot, cid))
+        return result
+
+    chats = asyncio.run(fetch_all())
     return jsonify({'chats': chats})
 
 @app.route('/api/send', methods=['POST'])
@@ -380,6 +428,7 @@ def update_scheduled(message_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5001))
     print("🌐 Запуск веб-интерфейса...")
-    print("📍 Откройте в браузере: http://localhost:5001")
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    print(f"📍 Откройте в браузере: http://localhost:{port}" if port == 5001 else f"📍 Слушаю порт {port} (Railway)")
+    app.run(host='0.0.0.0', port=port, debug=(port == 5001))
