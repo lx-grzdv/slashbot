@@ -283,6 +283,14 @@
                     <select id="chatSelect" required>
                         <option value="">Загрузка чатов...</option>
                     </select>
+                    <div class="form-group" style="margin-top: 12px; padding: 12px; background: #f0f4ff; border-radius: 8px;">
+                        <label for="newChatId" style="font-size: 13px;"><span class="emoji">➕</span> Нет нужного чата? Добавь по ID</label>
+                        <small style="color: #666; display: block; margin-bottom: 6px;">Напиши боту в Telegram команду <strong>/chat_id</strong> — он пришлёт ID чата. Вставь число ниже:</small>
+                        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                            <input type="text" id="newChatId" placeholder="Например: 123456789" style="flex: 1; min-width: 140px; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px;">
+                            <button type="button" id="addChatBtn" class="button secondary" style="margin-top: 0; padding: 10px 20px;">Добавить чат</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -480,12 +488,19 @@
                         body: JSON.stringify({ chat_id: chatId, message: message })
                     });
                     
-                    const data = await response.json();
+                    let data;
+                    try {
+                        data = await response.json();
+                    } catch (_) {
+                        showNotification('Ошибка сервера: не удалось прочитать ответ', 'error', 6000);
+                        return;
+                    }
                     if (data.success) {
                         showNotification('Сообщение отправлено!', 'success');
                         document.getElementById('messageText').value = '';
                     } else {
-                        showNotification('Ошибка: ' + data.error, 'error');
+                        const errMsg = (data.error || 'Неизвестная ошибка').toString();
+                        showNotification('Ошибка: ' + errMsg, 'error', 6000);
                     }
                 } else {
                     // Запланированная отправка
@@ -559,17 +574,49 @@
             }).catch(()=>showNotification('Ошибка сети', 'error'))
         }
 
-        // Показ уведомления
-        function showNotification(message, type) {
+        // Показ уведомления (duration в мс, по умолчанию 3 сек для success, 5 сек для error)
+        function showNotification(message, type, duration) {
             const notification = document.getElementById('notification');
             notification.textContent = message;
             notification.className = `notification ${type}`;
             notification.classList.add('show');
-            
+            const ms = duration || (type === 'error' ? 6000 : 3000);
             setTimeout(() => {
                 notification.classList.remove('show');
-            }, 3000);
+            }, ms);
         }
+
+        // Добавить чат по ID
+        document.getElementById('addChatBtn').addEventListener('click', async function() {
+            const input = document.getElementById('newChatId');
+            const raw = (input.value || '').trim().replace(/\s/g, '');
+            if (!raw) {
+                showNotification('Введи ID чата (число)', 'error');
+                return;
+            }
+            const cid = parseInt(raw, 10);
+            if (isNaN(cid)) {
+                showNotification('ID чата должен быть числом', 'error');
+                return;
+            }
+            try {
+                const res = await fetch('/api/chats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ chat_id: cid })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showNotification('Чат добавлен. Обновляю список...', 'success');
+                    input.value = '';
+                    await loadChats();
+                } else {
+                    showNotification(data.error || 'Ошибка добавления', 'error');
+                }
+            } catch (e) {
+                showNotification('Ошибка сети', 'error');
+            }
+        });
 
         // Загрузка данных при старте
         loadChats().then(() => loadScheduled());

@@ -330,6 +330,18 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     """
     await update.message.reply_text(help_text)
 
+async def chat_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показывает ID текущего чата — чтобы добавить его в веб-панель."""
+    chat_id = update.effective_chat.id
+    chat_type = update.effective_chat.type
+    chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else "Личный чат"
+    add_chat(chat_id, chat_type, chat_title)
+    await update.message.reply_text(
+        f"🆔 **ID этого чата:** `{chat_id}`\n\n"
+        "Чтобы он появился в веб-панели: открой панель → блок «Добавить чат» → вставь этот ID и нажми «Добавить».",
+        parse_mode='Markdown'
+    )
+
 async def set_schedule_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /set_schedule - включает расписание для текущего чата"""
     global SCHEDULED_CHAT_ID
@@ -800,6 +812,7 @@ def main() -> None:
     application.add_handler(CommandHandler("set_bot_description", set_bot_description_command))
     application.add_handler(CommandHandler("bot_info", get_bot_info_command))
     application.add_handler(CommandHandler("test_message", test_message_command))
+    application.add_handler(CommandHandler("chat_id", chat_id_command))
     
     # Добавляем обработчик текстовых сообщений для отслеживания слова "Заход"
     # Он будет срабатывать на любые текстовые сообщения (кроме команд)

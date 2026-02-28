@@ -78,6 +78,20 @@ def load_chats():
             return []
     return []
 
+def add_chat_id(cid: int) -> bool:
+    """Добавляет chat_id в список (для веб-панели). Возвращает True если добавлен или уже был."""
+    try:
+        cid = int(cid)
+        chat_ids = load_chats()
+        if cid not in chat_ids:
+            chat_ids.append(cid)
+        with open(USERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'chat_ids': chat_ids}, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"Ошибка при сохранении чата: {e}")
+        return False
+
 def load_scheduled_messages():
     """Загружает список запланированных сообщений"""
     if os.path.exists(SCHEDULED_MESSAGES_FILE):
@@ -209,6 +223,21 @@ async def get_chat_info(bot, chat_id):
 def index():
     """Главная страница"""
     return render_template('index.html')
+
+@app.route('/api/chats', methods=['POST'])
+def add_chat():
+    """Добавляет чат по ID в список (для веб-панели). Тело: {"chat_id": 123456789}"""
+    data = request.json or {}
+    cid = data.get('chat_id')
+    if cid is None:
+        return jsonify({'success': False, 'error': 'Укажите chat_id'}), 400
+    try:
+        cid = int(cid)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'chat_id должен быть числом'}), 400
+    if add_chat_id(cid):
+        return jsonify({'success': True, 'message': 'Чат добавлен'})
+    return jsonify({'success': False, 'error': 'Не удалось сохранить'}), 500
 
 @app.route('/api/chats', methods=['GET'])
 def get_chats():
