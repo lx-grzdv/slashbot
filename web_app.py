@@ -1,9 +1,8 @@
 import os
-# Токен: из config (локально) или из env (Railway и т.п., где config.py нет в репо)
-try:
-    from config import BOT_TOKEN
-except ModuleNotFoundError:
-    BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+from dotenv import load_dotenv
+load_dotenv()
+# Токен только из env (локально — .env или export; Railway — Variables)
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 
 from flask import Flask, render_template, request, jsonify, Response
 from telegram import Bot
