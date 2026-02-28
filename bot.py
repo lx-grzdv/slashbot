@@ -239,7 +239,16 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else f"Личный чат с {update.effective_user.first_name}"
     add_chat(chat_id, chat_type, chat_title)
     
-    command = update.message.text[1:]  # Убираем слеш в начале
+    command = update.message.text[1:].split('@')[0].strip()  # Убираем слеш и @botname
+    
+    # /chat_id — всегда отвечаем ID чата (на случай если сюда попали вместо CommandHandler)
+    if command.lower() == 'chat_id':
+        await update.message.reply_text(
+            f"🆔 **ID этого чата:** `{chat_id}`\n\n"
+            "Чтобы он появился в веб-панели: открой панель → блок «Добавить чат» → вставь этот ID и нажми «Добавить».",
+            parse_mode='Markdown'
+        )
+        return
     
     # Список "хороших" команд, на которые отвечаем фактами
     good_commands = [
