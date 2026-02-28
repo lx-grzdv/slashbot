@@ -8,10 +8,14 @@ from telegram.warnings import PTBUserWarning
 warnings.filterwarnings("ignore", message=".*days.*parameter.*cron", category=PTBUserWarning)
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest
-from config import BOT_TOKEN
+import os
+try:
+    from config import BOT_TOKEN
+except ModuleNotFoundError:
+    # На Railway и т.п. config.py может отсутствовать (в .gitignore) — берём из env
+    BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 import pytz
 import json
-import os
 
 # Файл для хранения настроек
 SETTINGS_FILE = "bot_settings.json"
@@ -755,10 +759,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 def main() -> None:
     """Основная функция для запуска бота"""
-    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN":
+    if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN" or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("❌ Ошибка: BOT_TOKEN не настроен!")
-        print("Откройте файл config.py и замените YOUR_BOT_TOKEN на токен вашего бота от @BotFather")
-        return
+        print("Задайте переменную окружения BOT_TOKEN (например в Railway: Variables → BOT_TOKEN)")
+        import sys
+        sys.exit(1)
     
     print("=" * 60)
     print("🚀 ЗАПУСК БОТА")
