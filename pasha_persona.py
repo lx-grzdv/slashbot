@@ -12,7 +12,40 @@ from typing import Optional
 BOT_USERNAME = "ag_slashbot"
 BOT_MENTION = f"@{BOT_USERNAME}"
 
-URL = re.compile(r"https?://|t\.me/|@", re.I)
+URL = re.compile(r"https?://|t\.me/", re.I)
+MENTION = re.compile(r"@\w", re.I)
+
+# Команда S:P9 — обращения Паши из экспорта (username → имена и фразы)
+TEAM_PERSONALIZATION: dict[str, dict[str, list[str]]] = {
+    "lx_grzdv": {
+        "names": ["Лех", "Леха", "Лёш"],
+        "long": [
+            "Леха хэпиберзdэй",
+            "Бля Леха, котики это же geniально",
+            "@lx_grzdv ты жив?",
+            "@lx_grzdv придешь?",
+        ],
+    },
+    "trystepanov": {
+        "names": ["Степ", "Стеpa"],
+        "long": [
+            "Стеpa, спасибо за отзывчивость",
+            "У меня не было такого. Мы пили Степу спецуху",
+            "Степ, давай синкнемся по дню. Кажется я мог что-то упустить",
+        ],
+    },
+    "ikarcev": {
+        "names": ["Санек", "Саш", "Саша"],
+        "long": [
+            "Санek, ну елки",
+            "Саш, тут апруved",
+            "Саша прости",
+        ],
+    },
+}
+TEAM_USERNAMES = frozenset(TEAM_PERSONALIZATION.keys())
+PERSONALIZE_LONG_CHANCE = 0.24
+PERSONALIZE_NAME_CHANCE = 0.38
 
 # --- Блоки из частотного анализа коротких реплик Паши ---
 AFFIRM_SIMPLE = ["да", "ага", "го", "угу", "неа", "ес", "есс", "давай"]
@@ -453,6 +486,16 @@ def pasha_reply_to_message(message_text: str) -> Optional[str]:
     if BACKGROUND_TRIGGER.search(text):
         return synthesize_reaction(text)
 
+    return None
+
+
+def pasha_reply_in_sp9_works(message_text: str) -> Optional[str]:
+    """S:P9 works — реагируем шире без @: фоновые триггеры + любой рабочий контекст."""
+    reply = pasha_reply_to_message(message_text)
+    if reply:
+        return reply
+    if _detect_context(message_text) != "generic":
+        return synthesize_reaction(message_text)
     return None
 
 

@@ -20,6 +20,7 @@ from pasha_persona import (
     BOT_MENTION,
     BOT_USERNAME,
     generate_pasha_response,
+    pasha_reply_in_sp9_works,
     pasha_reply_to_message,
     strip_bot_mention,
 )
@@ -37,9 +38,19 @@ APPLICATION = None  # Ссылка на приложение для переза
 CHAT_IDS = set()  # Множество ID всех чатов (личных и групповых)
 
 # Фиксированное расписание для чата S:P9 works
-SP9_WORKS_CHAT_ID = -1002413642408
+SP9_WORKS_CHAT_ID = int(os.getenv("SP9_WORKS_CHAT_ID", "-1002413642408"))
 SP9_SYNC_TEXT = "Синкуемся?"
 SP9_MEET_TEXT = "https://meet.google.com/igb-ajsz-tss "
+
+
+def is_sp9_works_chat(chat_id: int) -> bool:
+    return chat_id == SP9_WORKS_CHAT_ID
+
+
+def ensure_sp9_chat_registered() -> None:
+    """S:P9 works всегда в базе — рассылки и ответы в группе."""
+    if SP9_WORKS_CHAT_ID not in CHAT_IDS:
+        add_chat(SP9_WORKS_CHAT_ID, "group", "S:P9 works")
 
 def is_bot_mentioned(update: Update) -> bool:
     """Проверяет, обратились ли к @ag_slashbot."""
@@ -762,6 +773,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not (update.message and update.message.text):
         return
 
+    if update.effective_user and update.effective_user.is_bot:
+        return
+
     message_text = update.message.text
     chat_id = update.effective_chat.id
     chat_type = update.effective_chat.type
@@ -800,7 +814,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(reply)
         return
 
-    reply = pasha_reply_to_message(message_text)
+    if is_sp9_works_chat(chat_id):
+        reply = pasha_reply_in_sp9_works(message_text)
+    else:
+        reply = pasha_reply_to_message(message_text)
     if reply:
         await update.message.reply_text(reply)
 
@@ -823,6 +840,7 @@ def main() -> None:
     
     # Загружаем список пользователей
     load_users()
+    ensure_sp9_chat_registered()
     
     # Меню команд в Telegram (при нажатии на "/") — чтобы /chat_id и др. были видны
     async def _set_bot_commands(app: Application) -> None:
