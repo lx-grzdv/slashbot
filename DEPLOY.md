@@ -12,9 +12,11 @@
 1. Зайди на [railway.app](https://railway.app) и войди через GitHub.
 2. **New Project** → **Deploy from GitHub repo** → выбери репозиторий `slashbot`.
 3. В настройках проекта:
-   - **Variables** → добавь переменную `BOT_TOKEN` со значением твоего токена от @BotFather.
-   - **Settings** → в **Start Command** укажи: `python bot.py` (или оставь пусто, если в корне есть `Procfile`).
+   - **Variables** → `BOT_TOKEN` (токен от @BotFather); опционально `WEB_USER`, `WEB_PASSWORD`.
+   - **Procfile** уже запускает `python start_both.py` (бот + веб в одном сервисе).
 4. Деплой запустится сам. Бот будет работать пока проект на Railway активен.
+
+**Пошагово и разбор ошибок:** **[RAILWAY_SETUP.md](RAILWAY_SETUP.md)**.
 
 **Бесплатно:** ограниченные часы в месяц; для одного бота обычно хватает.
 
@@ -125,6 +127,22 @@ python bot.py
 - **Токен:** нигде не коммить `config.py` с реальным токеном. Использовать переменные окружения (`BOT_TOKEN`) или секреты платформы.
 - **Файлы данных:** `bot_settings.json`, `bot_users.json`, `scheduled_messages.json` на Railway/Render создаются в файловой системе воркера; при новом деплое они могут сброситься. Для сохранения данных между деплоями нужен объём (Railway) или база/S3 (при желании доработать проект).
 - **Веб-интерфейс:** см. раздел ниже.
+- **Сборка Python на Railway:** в корне лежит `mise.toml` — отключает проверку GitHub attestations для mise (иначе билд может упасть на старых версиях Python).
+- **Один процесс бот+веб:** `start_both.py` — бот в главном потоке (polling), Flask в фоне на `PORT`. Не меняй порядок потоков без необходимости (см. [RAILWAY_SETUP.md](RAILWAY_SETUP.md) → troubleshooting).
+
+---
+
+## Типичные проблемы при деплое
+
+| Симптом | Причина | Решение |
+|---------|---------|---------|
+| Build Failed: `No GitHub artifact attestations` | mise не ставит Python | `mise.toml` в репо или `MISE_PYTHON_GITHUB_ATTESTATIONS=false` |
+| `Command 'паша' is not a valid bot command` | Кириллица в `CommandHandler` | Только латиница в `CommandHandler`; `/паша` — в `handle_any_command` |
+| Веб работает, бот молчит | `run_polling` не в main thread | `start_both.py`: бот в главном потоке |
+| Сервис Active, бот не отвечает | Поток бота упал, Flask жив | Смотреть **Logs** целиком, не только статус |
+| Нет `BOT_TOKEN` | Переменная не задана | Railway → Variables |
+
+Подробнее: **[RAILWAY_SETUP.md](RAILWAY_SETUP.md)**.
 
 ---
 

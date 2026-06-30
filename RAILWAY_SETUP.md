@@ -66,34 +66,51 @@ Railway подхватит проект, увидит `requirements.txt` и на
 
 ---
 
-## Шаг 5: Указать команду запуска (если нужно)
+## Шаг 5: Команда запуска и тип сервиса
 
-Railway обычно подхватывает **Procfile**. В нём уже есть:
+В репозитории **Procfile** уже настроен на один сервис «бот + веб»:
 
 ```text
-worker: python bot.py
+web: python start_both.py
 ```
 
-- Если у сервиса тип **Worker** и он запускает `python bot.py` — ничего менять не нужно.
-- Если Railway создал **Web Service** и ждёт HTTP на порту:
-  1. Зайди в настройки сервиса → **Settings**.
-  2. Найди **Deploy** или **Build & Deploy**.
-  3. В поле **Start Command** (или **Custom Start Command**) укажи: `python bot.py`.
-  4. Вариант: в **Settings** сменить тип сервиса на **Worker**, если такой выбор есть (тогда порт не требуется).
+Railway (Railpack) подхватывает его автоматически. **Start Command** вручную менять не нужно.
 
-После этого деплой должен подняться как фоновый воркер без веб-порта.
+| Что | Значение |
+|-----|----------|
+| Тип сервиса | **Web** (слушает `PORT` для healthcheck) |
+| Старт | `python start_both.py` |
+| Главный поток | Telegram-бот (`run_polling`) |
+| Фоновый поток | Flask-веб-панель на `PORT` (по умолчанию 8080 на Railway) |
+
+Переменные для веб-панели (опционально, но рекомендуется в интернете):
+
+| Variable | Назначение |
+|----------|------------|
+| `BOT_TOKEN` | Токен от @BotFather (**обязательно**) |
+| `WEB_USER` | Логин для Basic Auth веб-панели |
+| `WEB_PASSWORD` | Пароль для веб-панели |
+
+Домен веб-панели: **Settings → Networking → Generate Domain**.
+
+Если нужен **только бот без веба** — Start Command: `python bot.py`, тип **Worker** (без порта).
 
 ---
 
 ## Шаг 6: Проверить деплой
 
-1. На вкладке **Deployments** посмотри последний деплой — статус должен быть **Success** / **Active**.
-2. Открой **Logs** (логи сервиса). Должны появиться строки вроде:
-   - `Загружено чатов: …`
-   - `Бот запущен` / сообщения о старте бота.
-3. В Telegram напиши боту команду `/start` или любую другую — бот должен ответить.
+1. На вкладке **Deployments** последний деплой — **Success** / **Active**.
+2. В **Logs** должны быть строки:
+   ```
+   [start_both] Данные: /app/bot_users.json
+   🤖 Бот @ag_slashbot запущен!
+   📝 Жду сообщения...
+   🌐 Веб-панель: http://0.0.0.0:8080
+   ```
+3. **Не должно быть** после «Бот запущен» строки `[start_both] Ошибка бота`.
+4. В Telegram: `/start` у [@ag_slashbot](https://t.me/ag_slashbot) — бот отвечает.
 
-Если в логах ошибка про токен — проверь, что переменная называется именно `BOT_TOKEN` и значение скопировано без пробелов.
+Если в логах ошибка про токен — проверь `BOT_TOKEN` без пробелов.
 
 ---
 
@@ -118,16 +135,76 @@ worker: python bot.py
 | 1 | Код в GitHub |
 | 2 | Войти на railway.app через GitHub |
 | 3 | New Project → Deploy from GitHub repo → выбрать `slashbot` |
-| 4 | Variables → добавить `BOT_TOKEN` с токеном от BotFather |
-| 5 | При необходимости: Settings → Start Command = `python bot.py` |
-| 6 | Deployments + Logs — убедиться, что бот стартовал; проверить в Telegram |
+| 4 | Variables → `BOT_TOKEN` (+ `WEB_USER` / `WEB_PASSWORD` для панели) |
+| 5 | Procfile уже `web: python start_both.py` — ничего не менять |
+| 6 | Deployments + Logs → `🤖 Бот @ag_slashbot запущен!`; проверить `/start` в Telegram |
 
 ---
 
 ## Если что-то пошло не так
 
-- **Бот не отвечает:** смотри **Logs** в Railway — ошибка про токен или импорт подскажет, что не так.
-- **"Application failed to respond":** сервис создан как Web (ждёт HTTP). Поставь Start Command `python bot.py` или смени тип на Worker.
-- **Нет репозитория в списке:** в настройках GitHub App для Railway выдай доступ к репозиторию `slashbot`.
+### Сборка: `No GitHub artifact attestations found for python@...`
 
-После успешной настройки бот будет работать в фоне на серверах Railway без участия твоего компьютера.
+Railpack ставит Python через **mise**. Для старых версий (например 3.12.7) attestations могут отсутствовать.
+
+**Решение в репозитории:** файл `mise.toml`:
+
+```toml
+[settings]
+python.github_attestations = false
+```
+
+**Альтернатива:** в Railway Variables → `MISE_PYTHON_GITHUB_ATTESTATIONS=false`.
+
+---
+
+### Старт: `Command 'паша' is not a valid bot command`
+
+Telegram принимает в `CommandHandler` только **латиницу**, цифры и `_`. Кириллические команды (`/паша`, `/привет`) нельзя регистрировать через `CommandHandler`.
+
+- `/pasha` — через `CommandHandler("pasha", ...)`
+- `/паша` и прочая кириллица — через `handle_any_command` в `bot.py`
+
+---
+
+### Бот молчит, но веб-панель работает: `set_wakeup_fd only works in main thread`
+
+Симптом: в логах есть `🌐 Веб-панель`, но сразу после `🤖 Бот запущен!` — `[start_both] Ошибка бота` и `set_wakeup_fd only works in main thread`.
+
+**Причина:** `application.run_polling()` нельзя вызывать из фонового потока.
+
+**Как устроено сейчас** (`start_both.py`):
+
+- **главный поток** — `bot.main()` (polling);
+- **daemon-поток** — Flask на `PORT` (healthcheck Railway).
+
+Не возвращай бота в фоновый поток без `stop_signals=()` в `run_polling`.
+
+---
+
+### Сервис «живой», бот не отвечает
+
+1. Открой **Logs**, не только статус деплоя — Flask может работать, а поток бота упасть.
+2. Проверь `BOT_TOKEN` в Variables.
+3. Убедись, что задеплоен последний коммит из `main` (Redeploy при необходимости).
+
+---
+
+### Прочее
+
+- **"Application failed to respond":** сервис Web без процесса на `PORT`. Используй `start_both.py` или `web_app.py`, не голый `bot.py` на Web-сервисе.
+- **Нет репозитория в списке:** GitHub App для Railway → доступ к `slashbot`.
+- **Сервис offline / REMOVED:** **Deploy the repo** или push в `main` для автодеплоя.
+
+---
+
+## Текущий прод
+
+| Параметр | Значение |
+|----------|----------|
+| Репозиторий | [lx-grzdv/slashbot](https://github.com/lx-grzdv/slashbot) |
+| Платформа | Railway, проект `abundant-optimism` / сервис `slashbot` |
+| Бот в Telegram | [@ag_slashbot](https://t.me/ag_slashbot) |
+| Запуск | `Procfile` → `python start_both.py` |
+
+После успешной настройки бот работает на серверах Railway без твоего компьютера.
