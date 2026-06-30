@@ -887,7 +887,7 @@ def main() -> None:
         print("🤖 Бот @ag_slashbot запущен! Нажмите Ctrl+C для остановки.")
         print("📝 Жду сообщения...")
         print("")
-        application.run_polling()
+        application.run_polling(stop_signals=())
         return
     
     # Запускаем задачу по будням в настроенное время только если есть настроенный чат
@@ -976,7 +976,7 @@ def main() -> None:
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            application.run_polling(drop_pending_updates=True)
+            application.run_polling(drop_pending_updates=True, stop_signals=())
             break
         except (telegram.error.TimedOut, telegram.error.NetworkError, OSError) as e:
             if attempt < max_retries - 1:
