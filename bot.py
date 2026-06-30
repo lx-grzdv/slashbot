@@ -271,10 +271,18 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     admin_commands = {
         'set_schedule', 'stop_schedule', 'status_schedule', 'set_time', 'set_timezone',
         'set_bot_name', 'set_bot_description', 'bot_info', 'test_message', 'chat_id',
-        'start', 'help', 'kukumroom', 'kuku', 'kuku2', 'pasha', 'паша',
+        'start', 'help', 'kukumroom', 'kuku', 'kuku2', 'pasha',
     }
 
     cmd_base = command.lower().split()[0]
+
+    # /паша — кириллица, CommandHandler не принимает; ловим здесь
+    if cmd_base == 'паша':
+        prompt = command.split(maxsplit=1)[1] if len(command.split(maxsplit=1)) > 1 else None
+        reply = generate_pasha_response(text=prompt, command="паша")
+        await update.message.reply_text(reply)
+        return
+
     if cmd_base in admin_commands:
         return
 
@@ -822,7 +830,6 @@ def main() -> None:
             BotCommand("start", "Запуск @ag_slashbot"),
             BotCommand("help", "Помощь"),
             BotCommand("pasha", "Фраза в стиле Паши"),
-            BotCommand("паша", "Фраза в стиле Паши"),
             BotCommand("chat_id", "ID чата для веб-панели"),
             BotCommand("set_schedule", "Включить рассылку"),
             BotCommand("status_schedule", "Статус расписания"),
@@ -847,7 +854,6 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pasha", pasha_command))
-    application.add_handler(CommandHandler("паша", pasha_command))
     application.add_handler(CommandHandler("kukumroom", kukumroom_command))
     application.add_handler(CommandHandler("kuku", kuku_command))
     application.add_handler(CommandHandler("kuku2", kuku2_command))
