@@ -16,6 +16,13 @@ except ModuleNotFoundError:
     BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 import pytz
 import json
+from pasha_persona import (
+    BOT_MENTION,
+    BOT_USERNAME,
+    generate_pasha_response,
+    pasha_reply_to_message,
+    strip_bot_mention,
+)
 
 # Каталог данных (из start_both через SLASHBOT_DATA_DIR) и файлы в нём
 _DATA_DIR = os.environ.get('SLASHBOT_DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
@@ -28,6 +35,35 @@ SCHEDULED_TIME = dt.time(hour=16, minute=0)  # По умолчанию 16:00
 SCHEDULED_TIMEZONE = pytz.timezone('Europe/Moscow')  # По умолчанию Москва
 APPLICATION = None  # Ссылка на приложение для перезапуска задач
 CHAT_IDS = set()  # Множество ID всех чатов (личных и групповых)
+
+# Фиксированное расписание для чата S:P9 works
+SP9_WORKS_CHAT_ID = -1002413642408
+SP9_SYNC_TEXT = "Синкуемся?"
+SP9_MEET_TEXT = "https://meet.google.com/igb-ajsz-tss "
+
+def is_bot_mentioned(update: Update) -> bool:
+    """Проверяет, обратились ли к @ag_slashbot."""
+    message = update.message
+    if not message or not message.text:
+        return False
+
+    text = message.text.lower()
+    if BOT_MENTION.lower() in text or f"@{BOT_USERNAME}".lower() in text:
+        return True
+
+    if message.entities:
+        for entity in message.entities:
+            if entity.type == "mention":
+                mention = message.text[entity.offset:entity.offset + entity.length].lower()
+                if mention in (BOT_MENTION.lower(), f"@{BOT_USERNAME}".lower()):
+                    return True
+
+    if message.reply_to_message and message.reply_to_message.from_user:
+        replied_user = message.reply_to_message.from_user
+        if replied_user.is_bot and replied_user.username and replied_user.username.lower() == BOT_USERNAME:
+            return True
+
+    return False
 
 def load_users():
     """Загружает список чатов из файла"""
@@ -185,49 +221,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else f"Личный чат с {update.effective_user.first_name}"
     add_chat(chat_id, chat_type, chat_title)
     
-    welcome_message = """
-🤖 Привет! Я Классный парень - бот с интересными фактами!
+    welcome_message = f"""
+🤖 Привет! Я @ag_slashbot — бот, который отвечает в стиле Паши Чуприна.
 
-✨ Я отвечаю фактами только на "хорошие" команды!
+Напиши {BOT_MENTION} или любую команду через слеш — получишь короткую реакцию в стиле Паши:
+«гуд», «спасибо», «каеф», «хз», «как скажете»…
 
-✅ Хорошие команды:
-/привет /hello /hi
-/факт /fact
-/интересно /interesting
-/круто /cool
-/магия /magic
-/наука /science
-/животные /animals
-/природа /nature
+✨ Команды:
+/pasha /паша — реакция в стиле Паши
+/привет /макет /синк /что-угодно — тоже по-пашиному
 
-🔗 Специальные команды:
-/kukumroom - Ссылка на комнату Whereby
-/kuku - Ссылка на комнату Whereby
-/kuku2 - Ссылка на комнату Whereby 2
+📖 Подробнее: PASHA_PERSONA.md в репозитории
 
-🤖 Управление ботом:
-/set_bot_name <имя> - Изменить имя бота
-/set_bot_description <описание> - Изменить описание бота
-/bot_info - Показать информацию о боте
+🔗 Специальные:
+/kukumroom /kuku /kuku2 — ссылки на Whereby
 
-⏰ Управление расписанием:
-/set_schedule - Настроить сообщение по будням (пн-пт)
-/set_time HH:MM - Изменить время отправки
-/set_timezone <пояс> - Изменить часовой пояс
-/status_schedule - Проверить статус
-/stop_schedule - Отключить расписание
+⏰ Расписание:
+/set_schedule /set_time /set_timezone /status_schedule /stop_schedule
 
-📝 Текстовые сообщения:
-• Напиши "Закинул" → Я отвечу: "Ты классный, помни это"
-• Напиши "Заход" → Через 60 секунд отправлю: "Заход на завод"
+📝 Триггеры в тексте:
+• {BOT_MENTION} + любой текст → реакция по контексту
+• «Заход» → через 60 сек «Заход на завод»
+• залил / готово / синк / письмо → фоновая реакция (если бот видит сообщения в группе)
 
-❌ На остальные команды я отвечаю агрессивно!
-
-💡 Важно: В группах я вижу все сообщения только если:
-- Privacy Mode выключен в @BotFather, или
-- Я назначен администратором группы
-
-/help - Показать полную справку
+/help — полная справка
     """
     await update.message.reply_text(welcome_message)
 
@@ -250,27 +267,31 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
         return
     
-    # Список "хороших" команд, на которые отвечаем фактами
-    good_commands = [
-        'start', 'help', 'привет', 'hello', 'hi', 'факт', 'fact', 
-        'интересно', 'interesting', 'круто', 'cool', 'магия', 'magic',
-        'наука', 'science', 'животные', 'animals', 'природа', 'nature',
-        'kukumroom', 'kuku', 'kuku2',
-        # Команды управления расписанием
+    # Список служебных команд — не отвечаем пашиным стилем (обработаны отдельными хендлерами)
+    admin_commands = {
         'set_schedule', 'stop_schedule', 'status_schedule', 'set_time', 'set_timezone',
-        # Команды управления ботом
-        'set_bot_name', 'set_bot_description', 'bot_info', 'test_message'
-    ]
-    
-    # Проверяем, является ли команда "хорошей"
-    if command.lower() in good_commands:
-        # Выбираем случайный интересный факт
-        fact = random.choice(INTERESTING_FACTS)
-        await update.message.reply_text(fact)
-    else:
-        # Выбираем случайный агрессивный ответ
-        aggressive_response = random.choice(AGGRESSIVE_RESPONSES)
-        await update.message.reply_text(aggressive_response)
+        'set_bot_name', 'set_bot_description', 'bot_info', 'test_message', 'chat_id',
+        'start', 'help', 'kukumroom', 'kuku', 'kuku2', 'pasha', 'паша',
+    }
+
+    cmd_base = command.lower().split()[0]
+    if cmd_base in admin_commands:
+        return
+
+    # Любая другая /команда → ответ в стиле Паши
+    reply = generate_pasha_response(command=cmd_base)
+    await update.message.reply_text(reply)
+
+async def pasha_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /pasha — ответ в стиле Паши (опционально на текст после команды)."""
+    add_chat(
+        update.effective_chat.id,
+        update.effective_chat.type,
+        update.effective_chat.title if hasattr(update.effective_chat, 'title') else "Личный чат",
+    )
+    prompt = " ".join(context.args).strip() if context.args else None
+    reply = generate_pasha_response(text=prompt, command="pasha")
+    await update.message.reply_text(reply)
 
 async def kukumroom_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /kukumroom"""
@@ -286,57 +307,26 @@ async def kuku2_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обработчик команды /help"""
-    help_text = """
-🤖 Как пользоваться ботом "Классный парень":
+    help_text = f"""
+🤖 @ag_slashbot — бот в стиле Паши Чуприна (S:P9)
 
-✨ Я отвечаю фактами только на "хорошие" команды!
+✨ Слеш-команды → пашины реплики:
+/привет /круто /магия /что-угодно
+/pasha /паша — фирменная фраза
+/коммент /апрув /го /салам /плиз /макет /синк
 
-✅ Хорошие команды (получат факт):
-/привет /hello /hi
-/факт /fact
-/интересно /interesting
-/круто /cool
-/магия /magic
-/наука /science
-/животные /animals
-/природа /nature
+📝 Текст:
+• {BOT_MENTION} + сообщение — ответ по контексту
+• Ответ (reply) на сообщение бота — тоже сработает
+• «Закинул» / «гуд» — пашина реакция
+• «Заход» — через 60 сек: «Заход на завод»
 
-❌ Плохие команды (получат агрессивный ответ):
-/пицца /космос /деньги /счастье
-/что-угодно /любая-команда
-/тест /спам /глупости
+⏰ Расписание:
+/set_schedule /set_time /set_timezone /status_schedule /stop_schedule
 
-⚠️ Я строгий бот! Не спамьте!
+🔗 Whereby: /kukumroom /kuku /kuku2
 
-📝 Текстовые сообщения:
-• Напиши "Закинул" → Я отвечу: "Ты классный, помни это"
-• Напиши "Заход" → Через 60 секунд отправлю: "Заход на завод"
-
-⏰ Управление расписанием:
-/set_schedule - Включить сообщение "Че как там по макетам" по будням (пн-пт) в этот чат
-/set_time HH:MM - Изменить время отправки (например: /set_time 16:00)
-/set_timezone <пояс> - Изменить часовой пояс (например: /set_timezone Europe/Moscow)
-/status_schedule - Проверить статус расписания
-/stop_schedule - Отключить запланированные сообщения
-
-🔗 Специальные команды:
-/start - Начать работу с ботом
-/help - Показать это сообщение
-/kukumroom - Ссылка на комнату Whereby
-/kuku - Ссылка на комнату Whereby
-/kuku2 - Ссылка на комнату Whereby 2
-
-🤖 Управление ботом:
-/set_bot_name <имя> - Изменить имя бота (отображается в списке участников)
-/set_bot_description <описание> - Изменить описание бота
-/bot_info - Показать информацию о боте
-
-💡 Где я работаю:
-✅ В личных сообщениях - всегда вижу все
-✅ В группах - если Privacy Mode выключен в @BotFather
-✅ В группах - если я администратор
-
-Попробуй хорошую команду! /привет
+Попробуй: /pasha или напиши {BOT_MENTION} готово
     """
     await update.message.reply_text(help_text)
 
@@ -713,6 +703,22 @@ async def send_morning_broadcast(context: ContextTypes.DEFAULT_TYPE) -> None:
     
     print(f"📊 Утренняя рассылка завершена: успешно={success_count}, ошибок={error_count}")
 
+async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отправляет в S:P9 works сообщение 'Синкуемся?' по будням в 12:00 МСК."""
+    try:
+        await context.bot.send_message(chat_id=SP9_WORKS_CHAT_ID, text=SP9_SYNC_TEXT)
+        print(f"✅ SP9 sync отправлен в чат {SP9_WORKS_CHAT_ID}")
+    except Exception as e:
+        print(f"❌ Ошибка SP9 sync в чат {SP9_WORKS_CHAT_ID}: {e}")
+
+async def send_sp9_meet_message(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отправляет в S:P9 works ссылку Meet по будням в 12:01 МСК."""
+    try:
+        await context.bot.send_message(chat_id=SP9_WORKS_CHAT_ID, text=SP9_MEET_TEXT)
+        print(f"✅ SP9 meet отправлен в чат {SP9_WORKS_CHAT_ID}")
+    except Exception as e:
+        print(f"❌ Ошибка SP9 meet в чат {SP9_WORKS_CHAT_ID}: {e}")
+
 def restart_scheduled_job(application):
     """Перезапускает задачу расписания с новыми настройками"""
     job_queue = application.job_queue
@@ -744,40 +750,51 @@ def restart_scheduled_job(application):
         print("⚠️ Не удалось перезапустить задачу: SCHEDULED_CHAT_ID не настроен")
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Обработчик текстовых сообщений для отслеживания слов 'Заход' и 'Закинул'"""
-    if update.message and update.message.text:
-        message_text = update.message.text
-        chat_id = update.effective_chat.id
-        chat_type = update.effective_chat.type
-        chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else f"Личный чат с {update.effective_user.first_name}"
-        
-        # Добавляем чат в базу для рассылки
-        add_chat(chat_id, chat_type, chat_title)
-        
-        print(f"📨 Получено сообщение: {message_text}")
-        print(f"   Chat ID: {chat_id} | Тип: {chat_type} | Название: {chat_title}")
-        
-        # Проверяем, содержит ли сообщение слово "Закинул"
-        if "Закинул" in message_text or "закинул" in message_text:
-            print(f"✅ Обнаружено слово 'Закинул'! Отправляю ответ")
-            await update.message.reply_text("Ты классный, помни это")
-        
-        # Проверяем, содержит ли сообщение слово "Заход"
-        if "Заход" in message_text or "заход" in message_text:
-            print(f"✅ Обнаружено слово 'Заход'! Планирую отправку сообщения через 60 секунд в чат {chat_id}")
-            
-            # Планируем отправку сообщения через 60 секунд (1 минута)
-            context.job_queue.run_once(
-                send_delayed_message,
-                60,
-                chat_id=chat_id,
-                name=f"zaход_{chat_id}"
-            )
-        
-        # Проверяем, содержит ли сообщение слово "гуд"
-        if "гуд" in message_text.lower():
-            print(f"✅ Обнаружено слово 'гуд'! Отправляю ответ")
-            await update.message.reply_text("я знал, что ты лучший")
+    """Текстовые сообщения: триггеры и ответы в стиле Паши."""
+    if not (update.message and update.message.text):
+        return
+
+    message_text = update.message.text
+    chat_id = update.effective_chat.id
+    chat_type = update.effective_chat.type
+    chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else f"Личный чат с {update.effective_user.first_name}"
+
+    add_chat(chat_id, chat_type, chat_title)
+
+    print(f"📨 Получено сообщение: {message_text}")
+    print(f"   Chat ID: {chat_id} | Тип: {chat_type} | Название: {chat_title}")
+
+    # «Заход» — отложенное сообщение (как раньше)
+    if "Заход" in message_text or "заход" in message_text:
+        print(f"✅ Обнаружено слово 'Заход'! Планирую отправку через 60 сек в чат {chat_id}")
+        context.job_queue.run_once(
+            send_delayed_message,
+            60,
+            chat_id=chat_id,
+            name=f"zaход_{chat_id}",
+        )
+
+    # Ответ в стиле Паши: @ag_slashbot или reply именно на бота
+    clean_text = strip_bot_mention(message_text)
+    if is_bot_mentioned(update):
+        reply = generate_pasha_response(text=clean_text or message_text)
+        await update.message.reply_text(reply)
+        return
+
+    if (
+        update.message.reply_to_message
+        and update.message.reply_to_message.from_user
+        and update.message.reply_to_message.from_user.is_bot
+        and update.message.reply_to_message.from_user.username
+        and update.message.reply_to_message.from_user.username.lower() == BOT_USERNAME
+    ):
+        reply = generate_pasha_response(text=clean_text or message_text)
+        await update.message.reply_text(reply)
+        return
+
+    reply = pasha_reply_to_message(message_text)
+    if reply:
+        await update.message.reply_text(reply)
 
 def main() -> None:
     """Основная функция для запуска бота"""
@@ -802,10 +819,12 @@ def main() -> None:
     # Меню команд в Telegram (при нажатии на "/") — чтобы /chat_id и др. были видны
     async def _set_bot_commands(app: Application) -> None:
         await app.bot.set_my_commands([
-            BotCommand("start", "Запуск бота"),
-            BotCommand("help", "Помощь по командам"),
-            BotCommand("chat_id", "Узнать ID чата для веб-панели"),
-            BotCommand("set_schedule", "Включить рассылку в этот чат"),
+            BotCommand("start", "Запуск @ag_slashbot"),
+            BotCommand("help", "Помощь"),
+            BotCommand("pasha", "Фраза в стиле Паши"),
+            BotCommand("паша", "Фраза в стиле Паши"),
+            BotCommand("chat_id", "ID чата для веб-панели"),
+            BotCommand("set_schedule", "Включить рассылку"),
             BotCommand("status_schedule", "Статус расписания"),
             BotCommand("bot_info", "Инфо о боте"),
         ])
@@ -827,6 +846,8 @@ def main() -> None:
     # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("pasha", pasha_command))
+    application.add_handler(CommandHandler("паша", pasha_command))
     application.add_handler(CommandHandler("kukumroom", kukumroom_command))
     application.add_handler(CommandHandler("kuku", kuku_command))
     application.add_handler(CommandHandler("kuku2", kuku2_command))
@@ -857,7 +878,7 @@ def main() -> None:
         print("Продолжаю запуск без планировщика задач...")
         print("=")
         print("")
-        print("🤖 Бот 'Классный парень' запущен! Нажмите Ctrl+C для остановки.")
+        print("🤖 Бот @ag_slashbot запущен! Нажмите Ctrl+C для остановки.")
         print("📝 Жду сообщения...")
         print("")
         application.run_polling()
@@ -893,8 +914,29 @@ def main() -> None:
         name='morning_broadcast',
         data=None
     )
+
+    # Настраиваем рассылки для чата S:P9 works по будням
+    sp9_sync_time = dt.time(hour=12, minute=0)  # 12:00 МСК
+    job_queue.run_daily(
+        send_sp9_sync_message,
+        time=sp9_sync_time,
+        days=(1, 2, 3, 4, 5),  # Понедельник-пятница
+        name='sp9_sync_weekday',
+        chat_id=SP9_WORKS_CHAT_ID,
+        data=None
+    )
+
+    sp9_meet_time = dt.time(hour=12, minute=1)  # 12:01 МСК
+    job_queue.run_daily(
+        send_sp9_meet_message,
+        time=sp9_meet_time,
+        days=(1, 2, 3, 4, 5),  # Понедельник-пятница
+        name='sp9_meet_weekday',
+        chat_id=SP9_WORKS_CHAT_ID,
+        data=None
+    )
     
-    print("🤖 Бот 'Классный парень' запущен! Нажмите Ctrl+C для остановки.")
+    print("🤖 Бот @ag_slashbot запущен! Нажмите Ctrl+C для остановки.")
     print("📝 Жду сообщения...")
     print()
     print("⏰ УПРАВЛЕНИЕ РАСПИСАНИЕМ:")
@@ -916,6 +958,10 @@ def main() -> None:
     print(f"      💬 Сообщение: 'Бодрейшего утра, посоны! Держите ссыль https://whereby.com/kukumroom'")
     print(f"   🎉 ПЯТНИЧНАЯ: каждую пятницу в 17:50 МСК")
     print(f"      💬 Сообщение: 'Эх, а скоро дудосинг...'")
+    print(f"   🕛 S:P9 works (ПН-ПТ): в 12:00 МСК")
+    print(f"      💬 Сообщение: '{SP9_SYNC_TEXT}'")
+    print(f"   🕛 S:P9 works (ПН-ПТ): в 12:01 МСК")
+    print(f"      💬 Сообщение: '{SP9_MEET_TEXT}'")
     print(f"   👥 Чатов в базе: {len(CHAT_IDS)}")
     print("=" * 60)
     
