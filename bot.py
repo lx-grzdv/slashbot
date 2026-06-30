@@ -9,6 +9,7 @@ warnings.filterwarnings("ignore", message=".*days.*parameter.*cron", category=PT
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest
 import os
+from typing import Optional
 try:
     from config import BOT_TOKEN
 except ModuleNotFoundError:
@@ -51,6 +52,12 @@ def ensure_sp9_chat_registered() -> None:
     """S:P9 works всегда в базе — рассылки и ответы в группе."""
     if SP9_WORKS_CHAT_ID not in CHAT_IDS:
         add_chat(SP9_WORKS_CHAT_ID, "group", "S:P9 works")
+
+
+def sender_username(update: Update) -> Optional[str]:
+    user = update.effective_user
+    return user.username.lower() if user and user.username else None
+
 
 def is_bot_mentioned(update: Update) -> bool:
     """Проверяет, обратились ли к @ag_slashbot."""
@@ -290,7 +297,7 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # /паша — кириллица, CommandHandler не принимает; ловим здесь
     if cmd_base == 'паша':
         prompt = command.split(maxsplit=1)[1] if len(command.split(maxsplit=1)) > 1 else None
-        reply = generate_pasha_response(text=prompt, command="паша")
+        reply = generate_pasha_response(text=prompt, command="паша", username=sender_username(update))
         await update.message.reply_text(reply)
         return
 
@@ -298,7 +305,7 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     # Любая другая /команда → ответ в стиле Паши
-    reply = generate_pasha_response(command=cmd_base)
+    reply = generate_pasha_response(command=cmd_base, username=sender_username(update))
     await update.message.reply_text(reply)
 
 async def pasha_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -309,7 +316,7 @@ async def pasha_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         update.effective_chat.title if hasattr(update.effective_chat, 'title') else "Личный чат",
     )
     prompt = " ".join(context.args).strip() if context.args else None
-    reply = generate_pasha_response(text=prompt, command="pasha")
+    reply = generate_pasha_response(text=prompt, command="pasha", username=sender_username(update))
     await update.message.reply_text(reply)
 
 async def kukumroom_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -799,7 +806,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Ответ в стиле Паши: @ag_slashbot или reply именно на бота
     clean_text = strip_bot_mention(message_text)
     if is_bot_mentioned(update):
-        reply = generate_pasha_response(text=clean_text or message_text)
+        reply = generate_pasha_response(
+            text=clean_text or message_text,
+            username=sender_username(update),
+        )
         await update.message.reply_text(reply)
         return
 
@@ -810,14 +820,17 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         and update.message.reply_to_message.from_user.username
         and update.message.reply_to_message.from_user.username.lower() == BOT_USERNAME
     ):
-        reply = generate_pasha_response(text=clean_text or message_text)
+        reply = generate_pasha_response(
+            text=clean_text or message_text,
+            username=sender_username(update),
+        )
         await update.message.reply_text(reply)
         return
 
     if is_sp9_works_chat(chat_id):
-        reply = pasha_reply_in_sp9_works(message_text)
+        reply = pasha_reply_in_sp9_works(message_text, username=sender_username(update))
     else:
-        reply = pasha_reply_to_message(message_text)
+        reply = pasha_reply_to_message(message_text, username=sender_username(update))
     if reply:
         await update.message.reply_text(reply)
 

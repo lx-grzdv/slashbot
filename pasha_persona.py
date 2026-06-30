@@ -20,26 +20,27 @@ TEAM_PERSONALIZATION: dict[str, dict[str, list[str]]] = {
     "lx_grzdv": {
         "names": ["Лех", "Леха", "Лёш"],
         "long": [
-            "Леха хэпиберзdэй",
-            "Бля Леха, котики это же geniально",
+            "Леха хэпиберздэй",
+            "Бля Леха, котики это же гениально",
             "@lx_grzdv ты жив?",
             "@lx_grzdv придешь?",
         ],
     },
     "trystepanov": {
-        "names": ["Степ", "Стеpa"],
+        "names": ["Диман", "Дима"],
         "long": [
-            "Стеpa, спасибо за отзывчивость",
-            "У меня не было такого. Мы пили Степу спецуху",
-            "Степ, давай синкнемся по дню. Кажется я мог что-то упустить",
+            "Дима, успех",
+            "Дима, привет. Выглядит интересно, можно продолжать!",
+            "Оо а я думаю чего так пива хочется) хэпи берздэй Дима!",
+            "Диман, давай синкнемся по дню. Кажется я мог что-то упустить",
         ],
     },
     "ikarcev": {
-        "names": ["Санек", "Саш", "Саша"],
+        "names": ["Илюха", "Илюх"],
         "long": [
-            "Санek, ну елки",
-            "Саш, тут апруved",
-            "Саша прости",
+            "Илюха, ну елки",
+            "Илюха, тут апрувед",
+            "Илюха, прости",
         ],
     },
 }
@@ -399,18 +400,69 @@ def _synthesize_one(context: str = "generic") -> str:
 
 
 
-def _is_valid_reply(candidate: str, max_len: int) -> bool:
+
+def resolve_target_username(
+    sender_username: Optional[str] = None,
+    text: Optional[str] = None,
+) -> Optional[str]:
+    """Кому персонализировать: автор из команды или @mention в тексте."""
+    if sender_username:
+        user = sender_username.lower().lstrip("@")
+        if user in TEAM_USERNAMES:
+            return user
+    if text:
+        for user in TEAM_USERNAMES:
+            if re.search(rf"@{re.escape(user)}\b", text, re.I):
+                return user
+    return None
+
+
+def _is_valid_reply(candidate: str, max_len: int, allow_team_mention: bool = False) -> bool:
     if len(candidate) > max_len:
         return False
     if FORBIDDEN.search(candidate):
         return False
     if URL.search(candidate):
         return False
+    if not allow_team_mention and MENTION.search(candidate):
+        return False
     return True
 
 
-def _long_pool_for(context: str) -> list[str]:
+def _starts_with_name(reply: str, names: list[str]) -> bool:
+    head = reply.split(",")[0].strip().split()[0].lower()
+    return any(head == name.lower() for name in names)
+
+
+def _apply_personalization(reply: str, username: Optional[str]) -> str:
+    if not username or username not in TEAM_PERSONALIZATION:
+        return reply
+    profile = TEAM_PERSONALIZATION[username]
+    names = profile.get("names", [])
+    if names and _starts_with_name(reply, names):
+        return reply
+    roll = random.random()
+    long_pool = profile.get("long", [])
+    if long_pool and roll < PERSONALIZE_LONG_CHANCE:
+        for _ in range(5):
+            pick = random.choice(long_pool)
+            if _is_valid_reply(pick, MAX_LONG_LEN, allow_team_mention=True):
+                return pick
+    if names and roll < PERSONALIZE_LONG_CHANCE + PERSONALIZE_NAME_CHANCE:
+        name = random.choice(names)
+        tail = reply
+        if tail and tail[0].isupper() and tail[0].isalpha():
+            tail = tail[0].lower() + tail[1:]
+        combined = f"{name}, {tail}"
+        if _is_valid_reply(combined, MAX_LONG_LEN, allow_team_mention=True):
+            return combined
+    return reply
+
+
+def _long_pool_for(context: str, username: Optional[str] = None) -> list[str]:
     own = list(PROVOCATIVE_LONG.get(context, []))
+    if username and username in TEAM_PERSONALIZATION:
+        own = own + TEAM_PERSONALIZATION[username].get("long", [])
     if context in ("delivered", "mail", "task", "thanks"):
         return own
     if own:
@@ -430,8 +482,8 @@ def _long_reply_chance(context: str) -> float:
     return LONG_REPLY_CHANCE
 
 
-def _pick_long_reaction(context: str) -> Optional[str]:
-    pool = _long_pool_for(context)
+def _pick_long_reaction(context: str, username: Optional[str] = None) -> Optional[str]:
+    pool = _long_pool_for(context, username)
     if not pool:
         return None
     return random.choice(pool)
@@ -445,57 +497,66 @@ def _detect_context(text: Optional[str]) -> str:
     return "generic"
 
 
-def synthesize_reaction(text: Optional[str] = None, n_candidates: int = 5) -> str:
+def synthesize_reaction(
+    text: Optional[str] = None,
+    n_candidates: int = 5,
+    username: Optional[str] = None,
+) -> str:
     """
     Синтезировать реакцию в стиле Паши.
     Генерирует несколько вариантов и выбирает валидный.
     """
+    target = resolve_target_username(username, text)
     context = _detect_context(text)
     if random.random() < _long_reply_chance(context):
         for _ in range(n_candidates * 3):
-            candidate = _pick_long_reaction(context)
-            if candidate and _is_valid_reply(candidate, MAX_LONG_LEN):
-                return candidate
+            candidate = _pick_long_reaction(context, target)
+            if candidate and _is_valid_reply(candidate, MAX_LONG_LEN, allow_team_mention=bool(target)):
+                return _apply_personalization(candidate, target)
 
     for _ in range(n_candidates * 2):
         candidate = _synthesize_one(context)
         if _is_valid_reply(candidate, MAX_SHORT_LEN):
-            return candidate
-    return random.choice(ANCHORS)
+            return _apply_personalization(candidate, target)
+    return _apply_personalization(random.choice(ANCHORS), target)
 
 
-def generate_pasha_response(text: Optional[str] = None, command: Optional[str] = None) -> str:
+def generate_pasha_response(
+    text: Optional[str] = None,
+    command: Optional[str] = None,
+    username: Optional[str] = None,
+) -> str:
     if command:
         cmd = command.lower().split()[0]
         if cmd in ("pasha", "паша", "салам", "апрув", "макет", "гуд"):
-            return synthesize_reaction(text)
+            return synthesize_reaction(text, username=username)
         if cmd in ("синк", "sync", "го"):
-            return synthesize_reaction("синк")
-        return synthesize_reaction()
+            return synthesize_reaction("синк", username=username)
+        return synthesize_reaction(username=username)
 
-    return synthesize_reaction(text)
+    return synthesize_reaction(text, username=username)
 
 
-def pasha_reply_to_message(message_text: str) -> Optional[str]:
+def pasha_reply_to_message(message_text: str, username: Optional[str] = None) -> Optional[str]:
     text = message_text.strip()
     lower = text.lower()
 
     if BOT_MENTION.lower() in lower or re.search(r"@ag_slashbot|@\w*slashbot", lower, re.I):
-        return synthesize_reaction(strip_bot_mention(text) or text)
+        return synthesize_reaction(strip_bot_mention(text) or text, username=username)
 
     if BACKGROUND_TRIGGER.search(text):
-        return synthesize_reaction(text)
+        return synthesize_reaction(text, username=username)
 
     return None
 
 
-def pasha_reply_in_sp9_works(message_text: str) -> Optional[str]:
+def pasha_reply_in_sp9_works(message_text: str, username: Optional[str] = None) -> Optional[str]:
     """S:P9 works — реагируем шире без @: фоновые триггеры + любой рабочий контекст."""
-    reply = pasha_reply_to_message(message_text)
+    reply = pasha_reply_to_message(message_text, username=username)
     if reply:
         return reply
     if _detect_context(message_text) != "generic":
-        return synthesize_reaction(message_text)
+        return synthesize_reaction(message_text, username=username)
     return None
 
 
