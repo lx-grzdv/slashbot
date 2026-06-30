@@ -1,0 +1,4 @@
+# Railway/Railpack uses mise to install Python. Attestations for 3.12.7
+# are missing on GitHub — disable verification so the build succeeds.
+[settings]
+python.github_attestations = false
