@@ -36,6 +36,7 @@ SETTINGS_FILE = os.path.join(_DATA_DIR, "bot_settings.json")
 SCHEDULED_CHAT_ID = None
 SCHEDULED_TIME = dt.time(hour=16, minute=0)  # По умолчанию 16:00
 SCHEDULED_TIMEZONE = pytz.timezone('Europe/Moscow')  # По умолчанию Москва
+MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 APPLICATION = None  # Ссылка на приложение для перезапуска задач
 CHAT_IDS = set()  # Множество ID всех чатов (личных и групповых)
 
@@ -46,7 +47,11 @@ _last_pasha_background_reply: dict[tuple[int, int], float] = {}
 # Фиксированное расписание для чата S:P9 works
 SP9_WORKS_CHAT_ID = int(os.getenv("SP9_WORKS_CHAT_ID", "-1002413642408"))
 SP9_SYNC_TEXT = "Синкуемся?"
-SP9_MEET_TEXT = "https://meet.google.com/igb-ajsz-tss "
+
+
+def moscow_time(hour: int, minute: int = 0) -> dt.time:
+    """Время с TZ Europe/Moscow для run_daily (на UTC-серверах иначе +3ч)."""
+    return MOSCOW_TZ.localize(dt.datetime(2000, 1, 1, hour, minute)).timetz()
 
 
 def is_sp9_works_chat(chat_id: int) -> bool:
@@ -743,14 +748,6 @@ async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         print(f"❌ Ошибка SP9 sync в чат {SP9_WORKS_CHAT_ID}: {e}")
 
-async def send_sp9_meet_message(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Отправляет в S:P9 works ссылку Meet по будням в 12:01 МСК."""
-    try:
-        await context.bot.send_message(chat_id=SP9_WORKS_CHAT_ID, text=SP9_MEET_TEXT)
-        print(f"✅ SP9 meet отправлен в чат {SP9_WORKS_CHAT_ID}")
-    except Exception as e:
-        print(f"❌ Ошибка SP9 meet в чат {SP9_WORKS_CHAT_ID}: {e}")
-
 def restart_scheduled_job(application):
     """Перезапускает задачу расписания с новыми настройками"""
     job_queue = application.job_queue
@@ -942,7 +939,7 @@ def main() -> None:
         )
     
     # Настраиваем рассылку по пятницам в 17:50 МСК
-    friday_time = dt.time(hour=17, minute=50)  # 17:50
+    friday_time = moscow_time(17, 50)
     job_queue.run_daily(
         send_friday_broadcast,
         time=friday_time,
@@ -951,23 +948,12 @@ def main() -> None:
         data=None
     )
     
-    # Настраиваем рассылки для чата S:P9 works по будням
-    sp9_sync_time = dt.time(hour=12, minute=0)  # 12:00 МСК
+    # S:P9 works — «Синкуемся?» по будням в 12:00 МСК
     job_queue.run_daily(
         send_sp9_sync_message,
-        time=sp9_sync_time,
+        time=moscow_time(12, 0),
         days=(1, 2, 3, 4, 5),  # Понедельник-пятница
         name='sp9_sync_weekday',
-        chat_id=SP9_WORKS_CHAT_ID,
-        data=None
-    )
-
-    sp9_meet_time = dt.time(hour=12, minute=1)  # 12:01 МСК
-    job_queue.run_daily(
-        send_sp9_meet_message,
-        time=sp9_meet_time,
-        days=(1, 2, 3, 4, 5),  # Понедельник-пятница
-        name='sp9_meet_weekday',
         chat_id=SP9_WORKS_CHAT_ID,
         data=None
     )
@@ -994,8 +980,6 @@ def main() -> None:
     print(f"      💬 Сообщение: 'Эх, а скоро дудосинг...'")
     print(f"   🕛 S:P9 works (ПН-ПТ): в 12:00 МСК")
     print(f"      💬 Сообщение: '{SP9_SYNC_TEXT}'")
-    print(f"   🕛 S:P9 works (ПН-ПТ): в 12:01 МСК")
-    print(f"      💬 Сообщение: '{SP9_MEET_TEXT}'")
     print(f"   👥 Чатов в базе: {len(CHAT_IDS)}")
     print("=" * 60)
     
