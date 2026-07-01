@@ -735,28 +735,6 @@ async def send_friday_broadcast(context: ContextTypes.DEFAULT_TYPE) -> None:
     
     print(f"📊 Рассылка завершена: успешно={success_count}, ошибок={error_count}")
 
-async def send_morning_broadcast(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Отправляет утреннее сообщение во все чаты по будням (пн-пт) в 10:30 МСК"""
-    message_text = "Бодрейшего утра, посоны! Держите ссыль https://whereby.com/kukumroom "
-    success_count = 0
-    error_count = 0
-    
-    print(f"☀️ Начало утренней рассылки во все чаты ({len(CHAT_IDS)} шт.)")
-    
-    for chat_id in CHAT_IDS:
-        try:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=message_text
-            )
-            success_count += 1
-            print(f"✅ Отправлено в чат {chat_id}")
-        except Exception as e:
-            error_count += 1
-            print(f"❌ Ошибка при отправке в чат {chat_id}: {e}")
-    
-    print(f"📊 Утренняя рассылка завершена: успешно={success_count}, ошибок={error_count}")
-
 async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет в S:P9 works сообщение 'Синкуемся?' по будням в 12:00 МСК."""
     try:
@@ -973,16 +951,6 @@ def main() -> None:
         data=None
     )
     
-    # Настраиваем утреннюю рассылку по будням в 10:30 МСК
-    morning_time = dt.time(hour=10, minute=30)  # 10:30
-    job_queue.run_daily(
-        send_morning_broadcast,
-        time=morning_time,
-        days=(1, 2, 3, 4, 5),  # Понедельник-пятница (1-5)
-        name='morning_broadcast',
-        data=None
-    )
-
     # Настраиваем рассылки для чата S:P9 works по будням
     sp9_sync_time = dt.time(hour=12, minute=0)  # 12:00 МСК
     job_queue.run_daily(
@@ -1022,8 +990,6 @@ def main() -> None:
         print("      2. Отправьте команду /set_schedule")
     print()
     print("📢 АВТОМАТИЧЕСКИЕ РАССЫЛКИ:")
-    print(f"   ☀️ УТРЕННЯЯ (ПН-ПТ): каждый будний день в 10:30 МСК")
-    print(f"      💬 Сообщение: 'Бодрейшего утра, посоны! Держите ссыль https://whereby.com/kukumroom'")
     print(f"   🎉 ПЯТНИЧНАЯ: каждую пятницу в 17:50 МСК")
     print(f"      💬 Сообщение: 'Эх, а скоро дудосинг...'")
     print(f"   🕛 S:P9 works (ПН-ПТ): в 12:00 МСК")

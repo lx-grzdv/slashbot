@@ -147,23 +147,8 @@ def get_system_schedules(selected_chat_id: Optional[int] = None):
     except Exception as e:
         print(f"Ошибка при чтении системного расписания: {e}")
 
-    # 2) Утренняя рассылка по будням 10:30 (для всех чатов)
+    # 2) Пятничная рассылка (пятница 17:50) — для всех чатов
     if selected_chat_id is not None:
-        system_items.append({
-            'id': f'sys_morning_{selected_chat_id}',
-            'system': True,
-            'name': 'Утренняя рассылка',
-            'chat_id': int(selected_chat_id),
-            'message': 'Бодрейшего утра, посоны! Держите ссыль https://whereby.com/kukumroom ',
-            'is_recurring': True,
-            'recurring_pattern': {
-                'days': [1, 2, 3, 4, 5],
-                'time': '10:30',
-                'timezone': 'Europe/Moscow'
-            }
-        })
-
-        # 3) Пятничная рассылка (пятница 17:50) — также для всех чатов
         system_items.append({
             'id': f'sys_friday_{selected_chat_id}',
             'system': True,
@@ -401,7 +386,7 @@ def update_scheduled(message_id):
     """Редактирует запланированное сообщение. Поддерживает как пользовательские, так и системные записи.
     Для системных: 
       - sys_daily_maket: можно изменить chat_id и time (HH:MM)
-      - sys_morning_*, sys_friday_*: можно изменить time
+      - sys_friday_*: можно изменить time
     """
     try:
         payload = request.json or {}
@@ -446,7 +431,7 @@ def update_scheduled(message_id):
                 json.dump(settings, f, ensure_ascii=False, indent=2)
             return jsonify({'success': True, 'message': 'Системное расписание обновлено'})
 
-        if message_id.startswith('sys_morning_') or message_id.startswith('sys_friday_'):
+        if message_id.startswith('sys_friday_'):
             # Эти системные шаблоны фиксированы в коде; позволим менять только время в интерфейсе
             # Ничего устойчивого сохранять некуда, поэтому возвращаем success и
             # в будущем можно вынести в отдельный конфиг. Пока — no-op для совместимости UI.
