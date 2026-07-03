@@ -18,7 +18,7 @@ except ModuleNotFoundError:
     BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 import pytz
 import json
-from meme_replies import maybe_meme_reply, record_chat_message
+from meme_replies import force_meme_reply, maybe_meme_reply, record_chat_message
 from pasha_persona import (
     BOT_MENTION,
     BOT_USERNAME,
@@ -281,6 +281,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 ✨ Команды:
 /pasha /паша — реакция в стиле Паши
+/meme /мем — мем по чату или тексту
 /привет /макет /синк /что-угодно — тоже по-пашиному
 
 📖 Подробнее: PASHA_PERSONA.md в репозитории
@@ -323,10 +324,31 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     admin_commands = {
         'set_schedule', 'stop_schedule', 'status_schedule', 'set_time', 'set_timezone',
         'set_bot_name', 'set_bot_description', 'bot_info', 'test_message', 'chat_id',
-        'start', 'help', 'kukumroom', 'kuku', 'kuku2', 'pasha',
+        'start', 'help', 'kukumroom', 'kuku', 'kuku2', 'pasha', 'meme', 'мем',
     }
 
     cmd_base = command.lower().split()[0]
+
+    if cmd_base in ('meme', 'мем'):
+        prompt = command.split(maxsplit=1)[1] if len(command.split(maxsplit=1)) > 1 else None
+        user = update.effective_user
+        if not user:
+            return
+        reply_to_text = None
+        if update.message.reply_to_message and update.message.reply_to_message.text:
+            reply_to_text = update.message.reply_to_message.text
+        meme, error = await force_meme_reply(
+            chat_id,
+            user.id,
+            prompt_text=prompt,
+            reply_to_text=reply_to_text,
+        )
+        if meme:
+            print(f"🎭 Force meme в чат {chat_id}: {meme}")
+            await update.message.reply_text(meme)
+        else:
+            await update.message.reply_text(error or "не вышло")
+        return
 
     # /паша — кириллица, CommandHandler не принимает; ловим здесь
     if cmd_base == 'паша':
@@ -341,6 +363,34 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Любая другая /команда → ответ в стиле Паши
     reply = generate_pasha_response(command=cmd_base, username=sender_username(update))
     await update.message.reply_text(reply)
+
+async def meme_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Команда /meme — принудительный мем по чату или тексту после команды."""
+    chat_id = update.effective_chat.id
+    chat_type = update.effective_chat.type
+    chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else "Личный чат"
+    add_chat(chat_id, chat_type, chat_title)
+
+    user = update.effective_user
+    if not user:
+        return
+
+    prompt = " ".join(context.args).strip() if context.args else None
+    reply_to_text = None
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        reply_to_text = update.message.reply_to_message.text
+
+    meme, error = await force_meme_reply(
+        chat_id,
+        user.id,
+        prompt_text=prompt,
+        reply_to_text=reply_to_text,
+    )
+    if meme:
+        print(f"🎭 Force meme в чат {chat_id}: {meme}")
+        await update.message.reply_text(meme)
+        return
+    await update.message.reply_text(error or "не вышло")
 
 async def pasha_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Команда /pasha — ответ в стиле Паши (опционально на текст после команды)."""
@@ -373,6 +423,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 ✨ Слеш-команды → пашины реплики:
 /привет /круто /магия /что-угодно
 /pasha /паша — фирменная фраза
+/meme /мем — принудительный мем (можно: /meme про макет)
 /коммент /апрув /го /салам /плиз /макет /синк
 
 📝 Текст:
@@ -884,6 +935,7 @@ def main() -> None:
             BotCommand("start", "Запуск @ag_slashbot"),
             BotCommand("help", "Помощь"),
             BotCommand("pasha", "Фраза в стиле Паши"),
+            BotCommand("meme", "Принудительный мем"),
             BotCommand("chat_id", "ID чата для веб-панели"),
             BotCommand("set_schedule", "Включить рассылку"),
             BotCommand("status_schedule", "Статус расписания"),
@@ -908,6 +960,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("pasha", pasha_command))
+    application.add_handler(CommandHandler("meme", meme_command))
     application.add_handler(CommandHandler("kukumroom", kukumroom_command))
     application.add_handler(CommandHandler("kuku", kuku_command))
     application.add_handler(CommandHandler("kuku2", kuku2_command))

@@ -31,6 +31,8 @@ MEME_LLM_MODEL = os.getenv("MEME_LLM_MODEL", "gpt-4o-mini")
 MEME_LLM_CHANCE = float(os.getenv("MEME_LLM_CHANCE", "0.85"))
 MEME_LLM_TIMEOUT_SEC = float(os.getenv("MEME_LLM_TIMEOUT_SEC", "12"))
 MEME_LLM_HISTORY_LINES = 8
+MEME_FORCE_COOLDOWN_SEC = 20.0
+MEME_FORCE_FALLBACK_PROMPT = "тишина в рабочем чате, все ждут макет"
 
 URL = re.compile(r"https?://|t\.me/", re.I)
 MENTION = re.compile(r"@\w+", re.I)
@@ -73,6 +75,7 @@ MEME_TEMPLATES = [
 
 _chat_history: dict[int, Deque[str]] = {}
 _last_meme_reply: dict[int, float] = {}
+_last_force_meme: dict[tuple[int, int], float] = {}
 
 
 def _normalize(text: str) -> str:
@@ -252,12 +255,14 @@ def _generate_meme(
     current_text: str,
     recent_texts: list[str],
     reply_to_text: Optional[str] = None,
+    *,
+    prefer_llm: bool = False,
 ) -> Optional[str]:
     sources = _source_pool(current_text, recent_texts, reply_to_text=reply_to_text)
     if not sources:
         return None
 
-    use_llm = OPENAI_API_KEY and random.random() < MEME_LLM_CHANCE
+    use_llm = OPENAI_API_KEY and (prefer_llm or random.random() < MEME_LLM_CHANCE)
     if use_llm:
         meme = _generate_meme_with_llm(current_text, recent_texts, reply_to_text=reply_to_text)
         if meme:
@@ -286,6 +291,62 @@ def _meme_on_cooldown(chat_id: int) -> bool:
 
 def _mark_meme_reply(chat_id: int) -> None:
     _last_meme_reply[chat_id] = time.monotonic()
+
+
+def _force_meme_on_cooldown(chat_id: int, user_id: int) -> bool:
+    last = _last_force_meme.get((chat_id, user_id))
+    if last is None:
+        return False
+    return time.monotonic() - last < MEME_FORCE_COOLDOWN_SEC
+
+
+def _mark_force_meme(chat_id: int, user_id: int) -> None:
+    _last_force_meme[(chat_id, user_id)] = time.monotonic()
+    _mark_meme_reply(chat_id)
+
+
+def _resolve_force_prompt(
+    prompt_text: Optional[str],
+    recent_texts: list[str],
+) -> str:
+    if prompt_text and len(_normalize(prompt_text)) >= MEME_MIN_TEXT_LEN:
+        return _normalize(prompt_text)
+    if recent_texts:
+        return recent_texts[-1]
+    return MEME_FORCE_FALLBACK_PROMPT
+
+
+async def force_meme_reply(
+    chat_id: int,
+    user_id: int,
+    *,
+    prompt_text: Optional[str] = None,
+    reply_to_text: Optional[str] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """
+    Принудительный мем по команде.
+    Возвращает (текст мема, сообщение об ошибке).
+    """
+    if _force_meme_on_cooldown(chat_id, user_id):
+        wait = int(MEME_FORCE_COOLDOWN_SEC)
+        return None, f"подожди {wait} сек перед следующим /meme"
+
+    history = list(_chat_history.get(chat_id, []))
+    recent = history[:-1] if history else []
+    current = _resolve_force_prompt(prompt_text, history)
+
+    meme = await asyncio.to_thread(
+        _generate_meme,
+        current,
+        recent,
+        reply_to_text,
+        prefer_llm=True,
+    )
+    if meme:
+        _mark_force_meme(chat_id, user_id)
+        return meme, None
+
+    return None, "не смог сгенерить мем — попробуй /meme про макет или ответь реплаем на сообщение"
 
 
 async def maybe_meme_reply(
