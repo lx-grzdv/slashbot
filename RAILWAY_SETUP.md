@@ -91,6 +91,15 @@ Railway (Railpack) подхватывает его автоматически. *
 | `WEB_USER` | Логин для Basic Auth веб-панели |
 | `WEB_PASSWORD` | Пароль для веб-панели |
 
+Опционально — мемы через OpenAI (см. [MEME_REPLIES.md](MEME_REPLIES.md)):
+
+| Variable | Назначение |
+|----------|------------|
+| `OPENAI_API_KEY` | Ключ OpenAI — LLM-генерация мемов |
+| `MEME_LLM_MODEL` | Модель (по умолчанию `gpt-4o-mini`) |
+| `MEME_LLM_CHANCE` | Доля случайных мемов через LLM, `0.85` |
+| `OPENAI_BASE_URL` | Только если не стандартный OpenAI API |
+
 Домен веб-панели: **Settings → Networking → Generate Domain**.
 
 Если нужен **только бот без веба** — Start Command: `python bot.py`, тип **Worker** (без порта).
@@ -135,7 +144,7 @@ Railway (Railpack) подхватывает его автоматически. *
 | 1 | Код в GitHub |
 | 2 | Войти на railway.app через GitHub |
 | 3 | New Project → Deploy from GitHub repo → выбрать `slashbot` |
-| 4 | Variables → `BOT_TOKEN` (+ `WEB_USER` / `WEB_PASSWORD` для панели) |
+| 4 | Variables → `BOT_TOKEN` (+ `WEB_USER` / `WEB_PASSWORD` для панели; опционально `OPENAI_API_KEY` для мемов) |
 | 5 | Procfile уже `web: python start_both.py` — ничего не менять |
 | 6 | Deployments + Logs → `🤖 Бот @ag_slashbot запущен!`; проверить `/start` в Telegram |
 

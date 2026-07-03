@@ -130,12 +130,20 @@ bot.py                          pasha_persona.py
 
 **Проверь:** один воркер на Railway, локально не запущен `start_both.py` / `bot.py`.
 
-### Не отвечает
+### Не отвечает (персона Паши)
 
 - Обычный чат без упоминания и без триггеров.
 - Фоновый триггер от того же пользователя **раньше чем через 15 сек** после предыдущей фоновой реакции в этом чате.
-- Служебные команды (`/set_schedule`, `/help`, …).
+- Служебные команды (`/set_schedule`, `/help`, `/meme`, …).
 - Сообщения, для которых синтез не прошёл валидацию (редко — тогда fallback на якорную фразу).
+
+### Мемы (отдельно от персоны)
+
+Случайные мемные реплики и команда `/meme` — см. **[MEME_REPLIES.md](MEME_REPLIES.md)**. Кратко:
+
+- случайный мем ~3.5% в группе, если бот **не** ответил Пашей;
+- `/meme` / `/мем` — принудительно, с LLM при наличии `OPENAI_API_KEY`;
+- кулдаун случайных мемов: 7 мин на чат; `/meme`: 20 сек на пользователя.
 
 ### Особый случай: «Заход»
 
@@ -368,13 +376,15 @@ API: `generate_pasha_response(..., username="lx_grzdv")` или `resolve_target_
 |---|---|
 | `/pasha` | Реакция в стиле Паши |
 | `/паша` | То же |
+| `/meme` | Принудительный мем (см. [MEME_REPLIES.md](MEME_REPLIES.md)) |
+| `/мем` | То же |
 | `/pasha залил письмо` | Реакция с учётом текста после команды |
 | `/синк`, `/sync`, `/го` | Задумчивая реакция (контекст sync) |
 | `/привет`, `/макет`, `/чтоугодно` | Синтезированная реакция (catch-all) |
 
 ### Служебные команды (без персоны)
 
-`/start`, `/help`, `/pasha`, `/паша`, `/kukumroom`, `/kuku`, `/kuku2`, `/set_schedule`, `/set_time`, `/set_timezone`, `/status_schedule`, `/stop_schedule`, `/set_bot_name`, `/set_bot_description`, `/bot_info`, `/test_message`, `/chat_id`
+`/start`, `/help`, `/pasha`, `/паша`, `/meme`, `/мем`, `/kukumroom`, `/kuku`, `/kuku2`, `/set_schedule`, `/set_time`, `/set_timezone`, `/status_schedule`, `/stop_schedule`, `/set_bot_name`, `/set_bot_description`, `/bot_info`, `/test_message`, `/chat_id`
 
 ---
 
@@ -643,6 +653,7 @@ flowchart TD
 ## Связанные документы
 
 - [README.md](README.md) — общий обзор slashbot
+- [MEME_REPLIES.md](MEME_REPLIES.md) — мемы: `/meme`, LLM, случайные реплики
 - [SP9_WORKS_CHAT.md](SP9_WORKS_CHAT.md) — ID чата S:P9 works
 - [DEPLOY.md](DEPLOY.md) — деплой 24/7
 - [RAILWAY_SETUP.md](RAILWAY_SETUP.md) — Railway и troubleshooting

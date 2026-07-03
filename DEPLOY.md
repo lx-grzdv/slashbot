@@ -12,7 +12,7 @@
 1. Зайди на [railway.app](https://railway.app) и войди через GitHub.
 2. **New Project** → **Deploy from GitHub repo** → выбери репозиторий `slashbot`.
 3. В настройках проекта:
-   - **Variables** → `BOT_TOKEN` (токен от @BotFather); опционально `WEB_USER`, `WEB_PASSWORD`.
+   - **Variables** → `BOT_TOKEN` (токен от @BotFather); опционально `WEB_USER`, `WEB_PASSWORD`, `OPENAI_API_KEY` (мемы — см. [MEME_REPLIES.md](MEME_REPLIES.md)).
    - **Procfile** уже запускает `python start_both.py` (бот + веб в одном сервисе).
 4. Деплой запустится сам. Бот будет работать пока проект на Railway активен.
 

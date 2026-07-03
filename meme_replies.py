@@ -32,7 +32,63 @@ MEME_LLM_CHANCE = float(os.getenv("MEME_LLM_CHANCE", "0.85"))
 MEME_LLM_TIMEOUT_SEC = float(os.getenv("MEME_LLM_TIMEOUT_SEC", "12"))
 MEME_LLM_HISTORY_LINES = 8
 MEME_FORCE_COOLDOWN_SEC = 20.0
-MEME_FORCE_FALLBACK_PROMPT = "тишина в рабочем чате, все ждут макет"
+MEME_FORCE_FALLBACK_PROMPT = "в чате тишина, все притворяются что макет гуд, а дедлайн горит"
+
+BLAND_MEME = re.compile(
+    r"тишина в чате|на уровне|прям как в классике|спокойно работа|звучит как название стартапа|"
+    r"буквально мы|мем дня:|удался$|без вариантов|это же гениально|на душе",
+    re.I,
+)
+
+LLM_SYSTEM_PROMPT = """\
+Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии S:P9. Напиши ОДНУ короткую кринжовую провокационную реплику по переписке.
+
+СТИЛЬ (обязательно):
+- кринж, стыдно-смешно, пассивная агрессия, абсурд, неудобный юмор
+- рабочий мат уместно: бля, блэт, зашквар, всратость, говно, жопа горит, херово
+- искажай фразы из чата — уничижительно, но смешно
+- референсы: дудосинг, ноукод, шакальные макеты, понаехали дизайнеры, рендер, фигма, синк
+
+ЗАПРЕЩЕНО:
+- bland корпоративный юмор («тишина в чате», «на уровне гуд», «классика ахах» без укуса)
+- мотивация, советы, объяснения, нравоучения
+- @, ссылки, кавычки вокруг всего ответа
+
+Примеры тона:
+- бля как же жопа горит от таких макетов
+- видимо через жопу ставили задачу и назвали хз как
+- ахах забыли очередь узбеков в рендер добавить
+- чУприн блядь. Понаехали дизайнеры
+- ну и в целом стиль разъехался, где-то секси тридэхи, где-то линии на плашке
+
+До 140 символов. Только текст реплики."""
+
+MEME_TEMPLATES = [
+    "бля {snippet} — это уже не макет, это личность",
+    "POV: ты {snippet}, а чат делает вид что норм",
+    "когда {snippet}, я уже на этапе принятия",
+    "{word}? серьёзно? мы же взрослые люди",
+    "ахах {snippet}... ну всратость зашкаливает",
+    "честно после «{snippet}» хочется в ноукод уйти",
+    "«{snippet}» — звучит как оправдание перед клиентом",
+    "не баг, не фича — просто {word}",
+    "главный кринж дня: {snippet}",
+    "типа норм, но {word} как свечи японские",
+    "бля я читал мем что {snippet} — это ок в 2026",
+    "когда в чате {snippet}, дедлайн сам себя переносит",
+    "это не синк, это {snippet} с претензией",
+    "всратость detected: {word}",
+    "ну {word} конечно, понаехали дизайнеры",
+    "ахах автор «{snippet}» скинет только люлей",
+    "блэт {snippet} — классика, но херово",
+    "чет {word} как будто через жопу сверстали",
+    "да бля, {snippet} и снова дудосинг",
+    "ого {word}... ну такое, неа",
+    "план говно: {snippet}",
+    "я: терплю\nчат: {snippet}",
+    "если {word} — то мы уже обдудосились",
+    "кста {snippet} — это зашквар, но гуд",
+]
 
 URL = re.compile(r"https?://|t\.me/", re.I)
 MENTION = re.compile(r"@\w+", re.I)
@@ -45,33 +101,6 @@ STOP_WORDS = frozenset({
     "ты", "он", "она", "они", "мы", "вы", "я", "все", "всё", "всего", "просто", "очень", "прям",
     "the", "is", "are", "to", "a", "an", "and", "or", "in", "on", "at", "for", "of", "it",
 })
-
-MEME_TEMPLATES = [
-    "POV: {snippet}",
-    "когда {snippet}, а на душе {word}",
-    "ахах «{snippet}» — классика",
-    "{word}? в 2026? да ладно",
-    "бля только что прочитал «{snippet}» и чуть не залил",
-    "типа {snippet}... ну ок",
-    "честно, {word} — это уже мем",
-    "«{snippet}» — паша бы сказал гуд",
-    "ну {word} конечно, без вариантов",
-    "ахаха {snippet}... ладно, забрал",
-    "именно так я и представлял {word}",
-    "«{snippet}» — звучит как название стартапа",
-    "если {word} — то да",
-    "кста, {snippet} — это же буквально мы",
-    "не знаю как у вас, а у меня после «{snippet}» только {word}",
-    "в чате снова {word}, обожаю этот сериал",
-    "когда в переписке {snippet} — значит день удался",
-    "ахах {word} detected",
-    "ну типа: {snippet}",
-    "перечитал «{snippet}» три раза, всё равно смешно",
-    "это не баг, это {word}",
-    "главный лор чата на сегодня: {snippet}",
-    "мем дня: {word}",
-    "я: спокойно работаю\nчат: {snippet}",
-]
 
 _chat_history: dict[int, Deque[str]] = {}
 _last_meme_reply: dict[int, float] = {}
@@ -146,6 +175,8 @@ def _is_valid_meme(candidate: str) -> bool:
         return False
     if text.startswith(("{", "[", "```")):
         return False
+    if BLAND_MEME.search(text):
+        return False
     return True
 
 
@@ -181,27 +212,21 @@ def _generate_meme_with_llm(
     current_text: str,
     recent_texts: list[str],
     reply_to_text: Optional[str] = None,
+    *,
+    attempts: int = 1,
 ) -> Optional[str]:
     if not OPENAI_API_KEY:
         return None
 
     context = _llm_context_block(current_text, recent_texts, reply_to_text=reply_to_text)
+    temperature = 1.28 if attempts > 1 else 1.18
+
     payload = {
         "model": MEME_LLM_MODEL,
-        "temperature": 1.05,
+        "temperature": temperature,
         "max_tokens": 90,
         "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии. "
-                    "Придумай одну короткую мемную смешную реплику по переписке. "
-                    "Стиль: ирония, рабочий сленг, иногда «бля», «ахах», «классика», «гуд», «хз». "
-                    "Можно POV, отсылки к фразам из чата, абсурд. "
-                    "До 140 символов, без кавычек вокруг всего ответа, без @, без ссылок, "
-                    "без советов и без объяснений. Только текст реплики."
-                ),
-            },
+            {"role": "system", "content": LLM_SYSTEM_PROMPT},
             {"role": "user", "content": context},
         ],
     }
@@ -224,6 +249,25 @@ def _generate_meme_with_llm(
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, IndexError, json.JSONDecodeError) as exc:
         print(f"⚠️ LLM meme failed: {exc}")
         return None
+
+
+def _generate_meme_with_llm_retries(
+    current_text: str,
+    recent_texts: list[str],
+    reply_to_text: Optional[str] = None,
+    *,
+    max_attempts: int = 3,
+) -> Optional[str]:
+    for attempt in range(1, max_attempts + 1):
+        meme = _generate_meme_with_llm(
+            current_text,
+            recent_texts,
+            reply_to_text=reply_to_text,
+            attempts=attempt,
+        )
+        if meme:
+            return meme
+    return None
 
 
 def _build_meme(source_texts: list[str]) -> Optional[str]:
@@ -264,7 +308,13 @@ def _generate_meme(
 
     use_llm = OPENAI_API_KEY and (prefer_llm or random.random() < MEME_LLM_CHANCE)
     if use_llm:
-        meme = _generate_meme_with_llm(current_text, recent_texts, reply_to_text=reply_to_text)
+        llm_attempts = 3 if prefer_llm else 2
+        meme = _generate_meme_with_llm_retries(
+            current_text,
+            recent_texts,
+            reply_to_text=reply_to_text,
+            max_attempts=llm_attempts,
+        )
         if meme:
             print(f"🧠 LLM meme: {meme}")
             return meme
