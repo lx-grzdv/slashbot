@@ -34,6 +34,13 @@ MEME_LLM_HISTORY_LINES = 8
 MEME_FORCE_COOLDOWN_SEC = 20.0
 MEME_FORCE_FALLBACK_PROMPT = "в чате тишина, все притворяются что макет гуд, а дедлайн горит"
 
+SILENCE_MEME_ENABLED = os.getenv("SILENCE_MEME_ENABLED", "1").strip().lower() not in ("0", "false", "no")
+SILENCE_MEME_SEC = float(os.getenv("SILENCE_MEME_HOURS", "3")) * 3600.0
+SILENCE_MEME_CHECK_SEC = float(os.getenv("SILENCE_MEME_CHECK_MIN", "20")) * 60.0
+SILENCE_MEME_PROMPT = (
+    "в чате тишина уже три часа, все притворяются что работают, а макеты сами себя не сделают"
+)
+
 BLAND_MEME = re.compile(
     r"тишина в чате|на уровне|прям как в классике|спокойно работа|звучит как название стартапа|"
     r"буквально мы|мем дня:|удался$|без вариантов|это же гениально|на душе",
@@ -117,6 +124,9 @@ STOP_WORDS = frozenset({
 _chat_history: dict[int, Deque[str]] = {}
 _last_meme_reply: dict[int, float] = {}
 _last_force_meme: dict[tuple[int, int], float] = {}
+_last_chat_activity: dict[int, float] = {}
+_silence_nudged_activity: dict[int, float] = {}
+_chat_types: dict[int, str] = {}
 
 
 def _normalize(text: str) -> str:
@@ -393,6 +403,54 @@ def record_chat_message(chat_id: int, text: str) -> None:
     if history and history[-1] == cleaned:
         return
     history.append(cleaned)
+
+
+def touch_chat_activity(chat_id: int, chat_type: str = "group") -> None:
+    """Отмечает активность людей в чате (для мема после тишины)."""
+    _last_chat_activity[chat_id] = time.monotonic()
+    _chat_types[chat_id] = chat_type
+
+
+def _is_group_chat(chat_id: int) -> bool:
+    return _chat_types.get(chat_id) in ("group", "supergroup")
+
+
+def should_send_silence_meme(chat_id: int) -> bool:
+    if not SILENCE_MEME_ENABLED:
+        return False
+    if not _is_group_chat(chat_id):
+        return False
+    last_activity = _last_chat_activity.get(chat_id)
+    if last_activity is None:
+        return False
+    now = time.monotonic()
+    if now - last_activity < SILENCE_MEME_SEC:
+        return False
+    if _silence_nudged_activity.get(chat_id) == last_activity:
+        return False
+    return True
+
+
+def mark_silence_meme_sent(chat_id: int) -> None:
+    last_activity = _last_chat_activity.get(chat_id)
+    if last_activity is not None:
+        _silence_nudged_activity[chat_id] = last_activity
+    _mark_meme_reply(chat_id)
+
+
+def silence_meme_candidates() -> list[int]:
+    return [chat_id for chat_id in _last_chat_activity if should_send_silence_meme(chat_id)]
+
+
+async def generate_silence_meme(chat_id: int) -> Optional[str]:
+    history = list(_chat_history.get(chat_id, []))
+    meme = await asyncio.to_thread(
+        _generate_meme,
+        SILENCE_MEME_PROMPT,
+        history,
+        prefer_llm=True,
+    )
+    return meme
 
 
 def _meme_on_cooldown(chat_id: int) -> bool:

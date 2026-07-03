@@ -12,3 +12,6 @@ BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 # MEME_LLM_CHANCE=0.85                # доля случайных мемов через LLM (0–1)
 # MEME_LLM_TIMEOUT_SEC=12             # таймаут запроса к API
 # OPENAI_BASE_URL=https://api.openai.com/v1   # если не стандартный OpenAI
+# SILENCE_MEME_HOURS=3                  # мем в группе после N часов тишины
+# SILENCE_MEME_CHECK_MIN=20             # проверка тишины каждые N минут
+# SILENCE_MEME_ENABLED=1                # 0 — выключить

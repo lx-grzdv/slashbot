@@ -18,7 +18,18 @@ except ModuleNotFoundError:
     BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 import pytz
 import json
-from meme_replies import force_meme_reply, maybe_meme_reply, record_chat_message
+from meme_replies import (
+    force_meme_reply,
+    generate_silence_meme,
+    maybe_meme_reply,
+    mark_silence_meme_sent,
+    record_chat_message,
+    silence_meme_candidates,
+    touch_chat_activity,
+    SILENCE_MEME_CHECK_SEC,
+    SILENCE_MEME_ENABLED,
+    SILENCE_MEME_SEC,
+)
 from pasha_persona import (
     BOT_MENTION,
     BOT_USERNAME,
@@ -308,6 +319,7 @@ async def handle_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chat_type = update.effective_chat.type
     chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else f"Личный чат с {update.effective_user.first_name}"
     add_chat(chat_id, chat_type, chat_title)
+    touch_chat_activity(chat_id, chat_type)
     
     command = update.message.text[1:].split('@')[0].strip()  # Убираем слеш и @botname
     
@@ -800,6 +812,33 @@ async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         print(f"❌ Ошибка SP9 sync в чат {SP9_WORKS_CHAT_ID}: {e}")
 
+
+async def track_chat_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Любое текстовое сообщение человека — активность чата (для мема после тишины)."""
+    if not (update.message and update.message.text):
+        return
+    if update.effective_user and update.effective_user.is_bot:
+        return
+    chat = update.effective_chat
+    if not chat:
+        return
+    touch_chat_activity(chat.id, chat.type)
+
+
+async def check_silence_memes(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Кринж-мем в группу, если люди молчат SILENCE_MEME_HOURS."""
+    for chat_id in silence_meme_candidates():
+        meme = await generate_silence_meme(chat_id)
+        if not meme:
+            print(f"⏭️ Silence meme: не сгенерировали для чата {chat_id}")
+            continue
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=meme)
+            mark_silence_meme_sent(chat_id)
+            print(f"🤫 Silence meme в чат {chat_id}: {meme}")
+        except Exception as e:
+            print(f"❌ Silence meme ошибка в чат {chat_id}: {e}")
+
 def restart_scheduled_job(application):
     """Перезапускает задачу расписания с новыми настройками"""
     job_queue = application.job_queue
@@ -845,6 +884,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     add_chat(chat_id, chat_type, chat_title)
     record_chat_message(chat_id, message_text)
+    touch_chat_activity(chat_id, chat_type)
 
     print(f"📨 Получено сообщение: {message_text}")
     print(f"   Update ID: {update.update_id} | Chat ID: {chat_id} | Тип: {chat_type} | Название: {chat_title}")
@@ -956,6 +996,8 @@ def main() -> None:
     global APPLICATION
     APPLICATION = application
     
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.StatusUpdate.ALL, track_chat_activity), group=-1)
+
     # Добавляем обработчики команд
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -1027,6 +1069,14 @@ def main() -> None:
         chat_id=SP9_WORKS_CHAT_ID,
         data=None
     )
+
+    if SILENCE_MEME_ENABLED:
+        job_queue.run_repeating(
+            check_silence_memes,
+            interval=SILENCE_MEME_CHECK_SEC,
+            first=min(300.0, SILENCE_MEME_CHECK_SEC),
+            name='silence_meme_check',
+        )
     
     print("🤖 Бот @ag_slashbot запущен! Нажмите Ctrl+C для остановки.")
     print("📝 Жду сообщения...")
@@ -1050,6 +1100,10 @@ def main() -> None:
     print(f"      💬 Сообщение: 'Эх, а скоро дудосинг...'")
     print(f"   🕛 S:P9 works (ПН-ПТ): в 12:00 МСК")
     print(f"      💬 Сообщение: '{SP9_SYNC_TEXT}'")
+    if SILENCE_MEME_ENABLED:
+        silence_hours = int(SILENCE_MEME_SEC // 3600)
+        check_min = int(SILENCE_MEME_CHECK_SEC // 60)
+        print(f"   🤫 ТИШИНА В ГРУППЕ: мем после {silence_hours} ч без сообщений (проверка каждые {check_min} мин)")
     print(f"   👥 Чатов в базе: {len(CHAT_IDS)}")
     print("=" * 60)
     
