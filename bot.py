@@ -18,6 +18,7 @@ except ModuleNotFoundError:
     BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 import pytz
 import json
+from meme_replies import maybe_meme_reply, record_chat_message
 from pasha_persona import (
     BOT_MENTION,
     BOT_USERNAME,
@@ -792,6 +793,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_title = update.effective_chat.title if hasattr(update.effective_chat, 'title') else f"Личный чат с {update.effective_user.first_name}"
 
     add_chat(chat_id, chat_type, chat_title)
+    record_chat_message(chat_id, message_text)
 
     print(f"📨 Получено сообщение: {message_text}")
     print(f"   Update ID: {update.update_id} | Chat ID: {chat_id} | Тип: {chat_type} | Название: {chat_title}")
@@ -839,6 +841,21 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         _mark_background_reply(update)
         await update.message.reply_text(reply)
+        return
+
+    reply_to_text = None
+    if update.message.reply_to_message and update.message.reply_to_message.text:
+        reply_to_text = update.message.reply_to_message.text
+
+    meme = maybe_meme_reply(
+        chat_id,
+        message_text,
+        chat_type=chat_type,
+        reply_to_text=reply_to_text,
+    )
+    if meme:
+        print(f"🎭 Мемная реплика в чат {chat_id}: {meme}")
+        await update.message.reply_text(meme)
 
 def main() -> None:
     """Основная функция для запуска бота"""
