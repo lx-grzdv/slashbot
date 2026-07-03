@@ -51,8 +51,14 @@ LLM_SYSTEM_PROMPT = """\
 
 ЗАПРЕЩЕНО:
 - bland корпоративный юмор («тишина в чате», «на уровне гуд», «классика ахах» без укуса)
+- обрывки фраз и словесное месиво («че макетам», «типа норм макет» без смысла)
 - мотивация, советы, объяснения, нравоучения
 - @, ссылки, кавычки вокруг всего ответа
+
+ОБЯЗАТЕЛЬНО:
+- опирайся на 1–2 конкретные реплики из переписки (экспрессо, синк, промо, checkout, коммент во фрейме…)
+- грамматически цельное предложение, чтобы было понятно без контекста чата
+- можно связать два события из чата в один абсурдный вывод
 
 Примеры тона:
 - бля как же жопа горит от таких макетов
@@ -64,31 +70,37 @@ LLM_SYSTEM_PROMPT = """\
 До 140 символов. Только текст реплики."""
 
 MEME_TEMPLATES = [
-    "бля {snippet} — это уже не макет, это личность",
-    "POV: ты {snippet}, а чат делает вид что норм",
+    "бля {snippet} — и это мы называем пятницей",
+    "POV: в чате {snippet}, а дедлайн всё ещё вчера",
     "когда {snippet}, я уже на этапе принятия",
-    "{word}? серьёзно? мы же взрослые люди",
     "ахах {snippet}... ну всратость зашкаливает",
-    "честно после «{snippet}» хочется в ноукод уйти",
-    "«{snippet}» — звучит как оправдание перед клиентом",
-    "не баг, не фича — просто {word}",
-    "главный кринж дня: {snippet}",
-    "типа норм, но {word} как свечи японские",
-    "бля я читал мем что {snippet} — это ок в 2026",
-    "когда в чате {snippet}, дедлайн сам себя переносит",
-    "это не синк, это {snippet} с претензией",
-    "всратость detected: {word}",
-    "ну {word} конечно, понаехали дизайнеры",
-    "ахах автор «{snippet}» скинет только люлей",
-    "блэт {snippet} — классика, но херово",
-    "чет {word} как будто через жопу сверстали",
-    "да бля, {snippet} и снова дудосинг",
-    "ого {word}... ну такое, неа",
+    "после «{snippet}» хочется в ноукод уйти",
+    "главный кринж сегодня: {snippet}",
+    "да бля, {snippet} — классика S:P9",
     "план говно: {snippet}",
     "я: терплю\nчат: {snippet}",
-    "если {word} — то мы уже обдудосились",
-    "кста {snippet} — это зашквар, но гуд",
+    "если {snippet} — значит мы обдудосились",
+    "блэт {snippet} — звучит как оправдание перед клиентом",
+    "честно, {snippet} — это уже не баг, а стиль жизни",
 ]
+
+MASHUP_TEMPLATES = [
+    "сначала {a}, потом {b} — ну всё, дудосинг",
+    "бля: {a}. и тут же {b}. классика",
+    "в чате {a}, а параллельно {b} — зашквар, но гуд",
+    "{a}? ок. но потом {b} — и я уже не уверен в реальности",
+]
+
+DANGLING_WORDS = frozenset({
+    "че", "по", "в", "во", "на", "к", "ко", "о", "с", "со", "у", "за", "из", "и", "а", "но",
+    "что", "как", "там", "тут", "это", "то", "ли", "же", "бы",
+})
+
+BROKEN_FRAGMENT = re.compile(
+    r"\bче \w+ам\b|\bпо \w+ам\b|\bк \w+ам\b|"
+    r"\bкста \w+ам\b|\bтипа \w+ам\b",
+    re.I,
+)
 
 URL = re.compile(r"https?://|t\.me/", re.I)
 MENTION = re.compile(r"@\w+", re.I)
@@ -122,27 +134,59 @@ def _meaningful_words(text: str) -> list[str]:
     return [w for w in _words(text) if w.lower() not in STOP_WORDS]
 
 
-def _pick_snippet(text: str, min_words: int = 2, max_words: int = 4) -> Optional[str]:
-    words = _meaningful_words(text)
-    if len(words) < min_words:
+def _is_coherent_snippet(snippet: str) -> bool:
+    text = snippet.strip()
+    if len(text) < 10:
+        return False
+    words = text.split()
+    if len(words) < 4 and len(text) < 28:
+        return False
+    if words[0].lower() in DANGLING_WORDS or words[-1].lower().rstrip(".,!?") in DANGLING_WORDS:
+        return False
+    if len(_meaningful_words(text)) < 3:
+        return False
+    if BROKEN_FRAGMENT.search(text):
+        return False
+    if re.search(r"\.\s+[А-ЯA-ZЁ]\w*$", text):
+        return False
+    return True
+
+
+def _phrase_candidates(text: str) -> list[str]:
+    cleaned = _normalize(text)
+    if not cleaned or cleaned.startswith("/"):
+        return []
+
+    candidates: list[str] = []
+    if 10 <= len(cleaned) <= 90 and _is_coherent_snippet(cleaned):
+        candidates.append(cleaned)
+
+    for sentence in re.split(r"[.!?]\s+", cleaned):
+        sentence = sentence.strip()
+        if 10 <= len(sentence) <= 90 and _is_coherent_snippet(sentence):
+            candidates.append(sentence)
+
+    if len(cleaned) <= 90:
+        for part in re.split(r"[,;—–-]\s*", cleaned):
+            part = part.strip()
+            if 10 <= len(part) <= 90 and _is_coherent_snippet(part):
+                candidates.append(part)
+
+    return list(dict.fromkeys(candidates))
+
+
+def _pick_snippet(text: str) -> Optional[str]:
+    phrases = _phrase_candidates(text)
+    if not phrases:
         return None
-    size = random.randint(min_words, min(max_words, len(words)))
-    if len(words) == size:
-        start = 0
-    else:
-        start = random.randint(0, len(words) - size)
-    snippet = " ".join(words[start:start + size])
-    if len(snippet) < 4:
-        return None
-    return snippet[:72]
+    return random.choice(phrases)
 
 
 def _pick_word(text: str) -> Optional[str]:
-    words = _meaningful_words(text)
+    words = [w for w in _meaningful_words(text) if len(w) >= 4]
     if not words:
         return None
-    word = random.choice(words)
-    return word[:24]
+    return random.choice(words)[:24]
 
 
 def _source_pool(
@@ -176,6 +220,8 @@ def _is_valid_meme(candidate: str) -> bool:
     if text.startswith(("{", "[", "```")):
         return False
     if BLAND_MEME.search(text):
+        return False
+    if BROKEN_FRAGMENT.search(text):
         return False
     return True
 
@@ -270,23 +316,38 @@ def _generate_meme_with_llm_retries(
     return None
 
 
+def _collect_phrases(source_texts: list[str]) -> list[str]:
+    phrases: list[str] = []
+    for text in source_texts:
+        phrases.extend(_phrase_candidates(text))
+    # длинные уникальные фразы важнее
+    unique = list(dict.fromkeys(phrases))
+    return [p for p in unique if _is_coherent_snippet(p)]
+
+
 def _build_meme(source_texts: list[str]) -> Optional[str]:
     if not source_texts:
         return None
 
-    for _ in range(12):
-        primary = random.choice(source_texts)
-        secondary = random.choice(source_texts)
-        snippet = _pick_snippet(primary) or _pick_snippet(secondary)
-        word = _pick_word(primary) or _pick_word(secondary)
-        if not snippet and not word:
-            continue
-        snippet = snippet or word or ""
-        word = word or snippet.split()[0]
+    phrases = _collect_phrases(source_texts)
+    if not phrases:
+        return None
 
+    for _ in range(16):
+        if len(phrases) >= 2 and random.random() < 0.35:
+            a, b = random.sample(phrases, 2)
+            template = random.choice(MASHUP_TEMPLATES)
+            try:
+                result = template.format(a=a, b=b)
+            except (KeyError, IndexError):
+                continue
+            if _is_valid_meme(result):
+                return result
+
+        snippet = random.choice(phrases)
         template = random.choice(MEME_TEMPLATES)
         try:
-            result = template.format(snippet=snippet, word=word)
+            result = template.format(snippet=snippet)
         except (KeyError, IndexError):
             continue
 
@@ -318,6 +379,8 @@ def _generate_meme(
         if meme:
             print(f"🧠 LLM meme: {meme}")
             return meme
+        if prefer_llm:
+            print("⚠️ LLM meme empty, fallback to phrases")
 
     return _build_meme(sources)
 
