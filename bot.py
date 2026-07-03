@@ -847,7 +847,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if update.message.reply_to_message and update.message.reply_to_message.text:
         reply_to_text = update.message.reply_to_message.text
 
-    meme = maybe_meme_reply(
+    meme = await maybe_meme_reply(
         chat_id,
         message_text,
         chat_type=chat_type,
