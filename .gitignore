@@ -142,5 +142,8 @@ Thumbs.db
 config.py
 bot_settings.json
 bot_users.json
+meme_state.json
 scheduled_messages.json
+.slashbot_write_probe
+.bot.lock
 

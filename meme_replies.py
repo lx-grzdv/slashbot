@@ -41,6 +41,58 @@ SILENCE_MEME_PROMPT = (
     "в чате тишина уже три часа, все притворяются что работают, а макеты сами себя не сделают"
 )
 
+SP9_SCHEDULED_MEME_ENABLED = os.getenv("SP9_SCHEDULED_MEME_ENABLED", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+)
+
+SP9_AFTERNOON_MEME_PROMPT = (
+    "после обеда в рабочем чате, все в полусне, макеты висят, синк был, а прогресса ноль"
+)
+SP9_EVENING_MEME_PROMPT = (
+    "вечер буднего дня, пора сворачиваться, но все ещё притворяются что доделают макет"
+)
+SP9_EVENING_FRIDAY_MEME_PROMPT = (
+    "пятница вечер, скоро дудосинг, все притворяются что успели до выходных"
+)
+
+SP9_AFTERNOON_FALLBACKS = (
+    "после обеда мозг в рендере, а ты всё ещё в фигме — классика",
+    "обед прошёл, макет нет, синк был — зашкварный послеобеденный шаблон",
+    "полтретьего: все притворяются что гуд, а глаза на пол-экрана",
+    "послеобеденный кринж: {snippet} — и это мы называем продуктивностью",
+)
+
+SP9_EVENING_FALLBACKS = (
+    "вечер, пора домой, но макет всё ещё «почти гуд»",
+    "ну всё, сворачиваемся — завтра снова притворимся что успеем",
+    "18:00: дедлайн завтра, а сегодня уже морально в дудосинге",
+    "на ночь глядя: {snippet} — звучит как план на завтра",
+)
+
+SP9_EVENING_FRIDAY_FALLBACKS = (
+    "пятница вечер — официально можно притвориться что всё залили",
+    "ну всё, выходные: макеты сами себя не сделают, но мы попробуем не думать",
+    "скоро дудосинг, а макет всё ещё «на финале» — классика пятницы",
+    "пятничный финал: {snippet} — и в понедельник снова «почти гуд»",
+)
+
+SP9_SLOT_LLM_FOCUS = {
+    "afternoon": (
+        "ПОСЛЕОБЕДЕННЫЙ мем (15:00 МСК): полусон, макеты висят, синк был, прогресса ноль. "
+        "Опирайся на конкретные реплики из переписки ниже."
+    ),
+    "evening": (
+        "ВЕЧЕРНИЙ мем (18:00 МСК): пора сворачиваться, но все притворяются что доделают. "
+        "Опирайся на конкретные реплики из переписки ниже."
+    ),
+    "evening_friday": (
+        "ПЯТНИЧНЫЙ ВЕЧЕР (18:00 МСК): напутствие на выходные, дудосинг, макет «на финале». "
+        "Опирайся на конкретные реплики из переписки ниже."
+    ),
+}
+
 BLAND_MEME = re.compile(
     r"тишина в чате|на уровне|прям как в классике|спокойно работа|звучит как название стартапа|"
     r"буквально мы|мем дня:|удался$|без вариантов|это же гениально|на душе",
@@ -127,6 +179,168 @@ _last_force_meme: dict[tuple[int, int], float] = {}
 _last_chat_activity: dict[int, float] = {}
 _silence_nudged_activity: dict[int, float] = {}
 _chat_types: dict[int, str] = {}
+
+_DATA_DIR = os.environ.get("SLASHBOT_DATA_DIR", os.path.dirname(os.path.abspath(__file__)))
+MEME_STATE_FILE = os.path.join(_DATA_DIR, "meme_state.json")
+_last_state_save = 0.0
+_state_dirty = False
+STATE_SAVE_INTERVAL_SEC = 30.0
+MEME_STATE_VERSION = 1
+
+
+def _normalize_openai_base_url() -> str:
+    base = OPENAI_BASE_URL.rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    return base.rstrip("/")
+
+
+def _openai_completions_url() -> str:
+    return f"{_normalize_openai_base_url()}/chat/completions"
+
+
+def _llm_uses_max_completion_tokens(model: str) -> bool:
+    lowered = model.lower()
+    return lowered.startswith(("o1", "o3", "o4", "gpt-5"))
+
+
+def _build_llm_payload(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    include_temperature: bool = True,
+) -> dict:
+    payload: dict = {
+        "model": MEME_LLM_MODEL,
+        "messages": messages,
+    }
+    if include_temperature:
+        payload["temperature"] = temperature
+    token_key = "max_completion_tokens" if _llm_uses_max_completion_tokens(MEME_LLM_MODEL) else "max_tokens"
+    payload[token_key] = 90
+    return payload
+
+
+def _mark_state_dirty() -> None:
+    global _state_dirty
+    _state_dirty = True
+
+
+def load_meme_state() -> None:
+    """Восстанавливает историю чатов и активность с диска."""
+    global _chat_history, _last_chat_activity, _chat_types, _silence_nudged_activity
+
+    if not os.path.exists(MEME_STATE_FILE):
+        print(f"💾 История чатов: файл не найден ({MEME_STATE_FILE})")
+        return
+
+    try:
+        with open(MEME_STATE_FILE, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"⚠️ Не удалось загрузить meme_state.json: {exc}")
+        return
+
+    histories = data.get("chat_history", {})
+    for raw_chat_id, messages in histories.items():
+        chat_id = int(raw_chat_id)
+        if not isinstance(messages, list):
+            continue
+        _chat_history[chat_id] = deque(
+            (str(item) for item in messages[-MEME_HISTORY_SIZE:]),
+            maxlen=MEME_HISTORY_SIZE,
+        )
+
+    for raw_chat_id, ts in data.get("last_activity", {}).items():
+        _last_chat_activity[int(raw_chat_id)] = float(ts)
+
+    for raw_chat_id, chat_type in data.get("chat_types", {}).items():
+        _chat_types[int(raw_chat_id)] = str(chat_type)
+
+    for raw_chat_id, ts in data.get("silence_nudged", {}).items():
+        _silence_nudged_activity[int(raw_chat_id)] = float(ts)
+
+    print(
+        f"💾 История чатов загружена: {len(_chat_history)} чат(ов), "
+        f"файл {MEME_STATE_FILE}"
+    )
+
+
+def save_meme_state(force: bool = False) -> None:
+    """Сохраняет историю и активность на диск (debounce 30 сек)."""
+    global _last_state_save, _state_dirty
+
+    now = time.time()
+    if not force and (not _state_dirty or now - _last_state_save < STATE_SAVE_INTERVAL_SEC):
+        return
+
+    payload = {
+        "version": MEME_STATE_VERSION,
+        "chat_history": {
+            str(chat_id): list(history)
+            for chat_id, history in _chat_history.items()
+            if history
+        },
+        "last_activity": {str(chat_id): ts for chat_id, ts in _last_chat_activity.items()},
+        "chat_types": {str(chat_id): chat_type for chat_id, chat_type in _chat_types.items()},
+        "silence_nudged": {str(chat_id): ts for chat_id, ts in _silence_nudged_activity.items()},
+    }
+
+    try:
+        os.makedirs(_DATA_DIR, exist_ok=True)
+        tmp_path = f"{MEME_STATE_FILE}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, MEME_STATE_FILE)
+        _last_state_save = now
+        _state_dirty = False
+    except OSError as exc:
+        print(f"⚠️ Не удалось сохранить meme_state.json: {exc}")
+
+
+def probe_llm_api() -> tuple[bool, str]:
+    """Проверка OPENAI_API_KEY и модели при старте."""
+    if not OPENAI_API_KEY:
+        return False, "OPENAI_API_KEY не задан — мемы только из шаблонов"
+
+    messages = [
+        {"role": "system", "content": "Ответь одним словом: ок"},
+        {"role": "user", "content": "ping"},
+    ]
+    for include_temperature in (True, False):
+        payload = _build_llm_payload(messages, temperature=0.2, include_temperature=include_temperature)
+        request = urllib.request.Request(
+            _openai_completions_url(),
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=min(MEME_LLM_TIMEOUT_SEC, 8.0)) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            content = body["choices"][0]["message"]["content"]
+            return True, f"{MEME_LLM_MODEL} @ {_normalize_openai_base_url()} — ok ({content.strip()[:20]})"
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+            except OSError:
+                pass
+            if include_temperature and exc.code == 400 and "temperature" in detail.lower():
+                continue
+            hint = ""
+            if exc.code == 401:
+                hint = " — проверь OPENAI_API_KEY"
+            elif exc.code == 404:
+                hint = " — проверь MEME_LLM_MODEL и OPENAI_BASE_URL"
+            return False, f"HTTP {exc.code}: {detail or exc.reason}{hint}"
+        except (urllib.error.URLError, TimeoutError, KeyError, IndexError, json.JSONDecodeError) as exc:
+            return False, str(exc)
+
+    return False, "не удалось проверить LLM"
 
 
 def _normalize(text: str) -> str:
@@ -253,14 +467,22 @@ def _llm_context_block(
     current_text: str,
     recent_texts: list[str],
     reply_to_text: Optional[str] = None,
+    *,
+    focus: Optional[str] = None,
 ) -> str:
-    lines: list[str] = [f"Сейчас в чате: {_normalize(current_text)}"]
-    if reply_to_text:
-        lines.append(f"Ответ на сообщение: {_normalize(reply_to_text)}")
+    lines: list[str] = []
+    if focus:
+        lines.append(focus)
     if recent_texts:
-        lines.append("Недавно в чате:")
+        lines.append("Переписка в чате S:P9 works:")
         for text in recent_texts[-MEME_LLM_HISTORY_LINES:]:
             lines.append(f"- {_normalize(text)}")
+    elif focus:
+        lines.append("Сегодня мало сообщений — всё равно кринж про рабочий день S:P9.")
+    if current_text and not focus:
+        lines.append(f"Сейчас в чате: {_normalize(current_text)}")
+    if reply_to_text:
+        lines.append(f"Ответ на сообщение: {_normalize(reply_to_text)}")
     return "\n".join(lines)
 
 
@@ -270,41 +492,59 @@ def _generate_meme_with_llm(
     reply_to_text: Optional[str] = None,
     *,
     attempts: int = 1,
+    focus: Optional[str] = None,
 ) -> Optional[str]:
     if not OPENAI_API_KEY:
         return None
 
-    context = _llm_context_block(current_text, recent_texts, reply_to_text=reply_to_text)
-    temperature = 1.28 if attempts > 1 else 1.18
-
-    payload = {
-        "model": MEME_LLM_MODEL,
-        "temperature": temperature,
-        "max_tokens": 90,
-        "messages": [
-            {"role": "system", "content": LLM_SYSTEM_PROMPT},
-            {"role": "user", "content": context},
-        ],
-    }
-
-    request = urllib.request.Request(
-        f"{OPENAI_BASE_URL}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
+    context = _llm_context_block(
+        current_text,
+        recent_texts,
+        reply_to_text=reply_to_text,
+        focus=focus,
     )
+    temperature = 1.28 if attempts > 1 else 1.18
+    messages = [
+        {"role": "system", "content": LLM_SYSTEM_PROMPT},
+        {"role": "user", "content": context},
+    ]
 
-    try:
-        with urllib.request.urlopen(request, timeout=MEME_LLM_TIMEOUT_SEC) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"]
-        return _sanitize_llm_reply(content)
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError, IndexError, json.JSONDecodeError) as exc:
-        print(f"⚠️ LLM meme failed: {exc}")
-        return None
+    for include_temperature in (True, False):
+        payload = _build_llm_payload(
+            messages,
+            temperature=temperature,
+            include_temperature=include_temperature,
+        )
+        request = urllib.request.Request(
+            _openai_completions_url(),
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=MEME_LLM_TIMEOUT_SEC) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            content = body["choices"][0]["message"]["content"]
+            return _sanitize_llm_reply(content)
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+            except OSError:
+                pass
+            if include_temperature and exc.code == 400 and "temperature" in detail.lower():
+                continue
+            print(f"⚠️ LLM meme failed: HTTP {exc.code} {exc.reason}" + (f" — {detail}" if detail else ""))
+            return None
+        except (urllib.error.URLError, TimeoutError, KeyError, IndexError, json.JSONDecodeError) as exc:
+            print(f"⚠️ LLM meme failed: {exc}")
+            return None
+
+    return None
 
 
 def _generate_meme_with_llm_retries(
@@ -313,6 +553,7 @@ def _generate_meme_with_llm_retries(
     reply_to_text: Optional[str] = None,
     *,
     max_attempts: int = 3,
+    focus: Optional[str] = None,
 ) -> Optional[str]:
     for attempt in range(1, max_attempts + 1):
         meme = _generate_meme_with_llm(
@@ -320,6 +561,7 @@ def _generate_meme_with_llm_retries(
             recent_texts,
             reply_to_text=reply_to_text,
             attempts=attempt,
+            focus=focus,
         )
         if meme:
             return meme
@@ -403,12 +645,16 @@ def record_chat_message(chat_id: int, text: str) -> None:
     if history and history[-1] == cleaned:
         return
     history.append(cleaned)
+    _mark_state_dirty()
+    save_meme_state()
 
 
 def touch_chat_activity(chat_id: int, chat_type: str = "group") -> None:
     """Отмечает активность людей в чате (для мема после тишины)."""
-    _last_chat_activity[chat_id] = time.monotonic()
+    _last_chat_activity[chat_id] = time.time()
     _chat_types[chat_id] = chat_type
+    _mark_state_dirty()
+    save_meme_state()
 
 
 def _is_group_chat(chat_id: int) -> bool:
@@ -423,7 +669,7 @@ def should_send_silence_meme(chat_id: int) -> bool:
     last_activity = _last_chat_activity.get(chat_id)
     if last_activity is None:
         return False
-    now = time.monotonic()
+    now = time.time()
     if now - last_activity < SILENCE_MEME_SEC:
         return False
     if _silence_nudged_activity.get(chat_id) == last_activity:
@@ -436,6 +682,8 @@ def mark_silence_meme_sent(chat_id: int) -> None:
     if last_activity is not None:
         _silence_nudged_activity[chat_id] = last_activity
     _mark_meme_reply(chat_id)
+    _mark_state_dirty()
+    save_meme_state(force=True)
 
 
 def silence_meme_candidates() -> list[int]:
@@ -451,6 +699,74 @@ async def generate_silence_meme(chat_id: int) -> Optional[str]:
         prefer_llm=True,
     )
     return meme
+
+
+def _scheduled_meme_config(slot: str) -> tuple[str, tuple[str, ...]]:
+    if slot == "afternoon":
+        return SP9_AFTERNOON_MEME_PROMPT, SP9_AFTERNOON_FALLBACKS
+    if slot == "evening_friday":
+        return SP9_EVENING_FRIDAY_MEME_PROMPT, SP9_EVENING_FRIDAY_FALLBACKS
+    return SP9_EVENING_MEME_PROMPT, SP9_EVENING_FALLBACKS
+
+
+def _pick_scheduled_fallback(fallbacks: tuple[str, ...], history: list[str]) -> str:
+    phrases = _collect_phrases(history) if history else []
+    snippet = random.choice(phrases) if phrases else "макет почти гуд"
+    for template in random.sample(list(fallbacks), len(fallbacks)):
+        try:
+            candidate = template.format(snippet=snippet) if "{snippet}" in template else template
+        except (KeyError, IndexError):
+            candidate = template
+        if _is_valid_meme(candidate):
+            return candidate
+    template = random.choice(fallbacks)
+    try:
+        return template.format(snippet=snippet) if "{snippet}" in template else template
+    except (KeyError, IndexError):
+        return template
+
+
+async def generate_sp9_scheduled_meme(chat_id: int, slot: str) -> Optional[str]:
+    """Плановый мем для S:P9 works: afternoon | evening | evening_friday."""
+    _, fallbacks = _scheduled_meme_config(slot)
+    history = list(_chat_history.get(chat_id, []))
+    focus = SP9_SLOT_LLM_FOCUS.get(slot, SP9_SLOT_LLM_FOCUS["evening"])
+
+    meme = await asyncio.to_thread(
+        _generate_scheduled_sp9_meme,
+        history,
+        focus,
+        fallbacks,
+    )
+    return meme
+
+
+def _generate_scheduled_sp9_meme(
+    history: list[str],
+    focus: str,
+    fallbacks: tuple[str, ...],
+) -> Optional[str]:
+    if OPENAI_API_KEY:
+        meme = _generate_meme_with_llm_retries(
+            "",
+            history,
+            max_attempts=3,
+            focus=focus,
+        )
+        if meme:
+            print(f"🧠 LLM scheduled meme: {meme}")
+            return meme
+        print("⚠️ LLM scheduled meme empty, fallback to phrases")
+
+    sources = list(history) if history else [focus]
+    built = _build_meme(sources)
+    if built:
+        return built
+    return _pick_scheduled_fallback(fallbacks, history)
+
+
+def mark_meme_sent(chat_id: int) -> None:
+    _mark_meme_reply(chat_id)
 
 
 def _meme_on_cooldown(chat_id: int) -> bool:

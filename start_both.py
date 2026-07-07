@@ -8,12 +8,18 @@ import os
 import threading
 import time
 
-# Один каталог для данных — и бот, и веб читают/пишут один и тот же bot_users.json
+from app_data import acquire_bot_lock, ensure_data_dir, resolve_data_dir
+
 _ROOT = os.path.dirname(os.path.abspath(__file__))
-os.environ['SLASHBOT_DATA_DIR'] = _ROOT
+_DATA_DIR = resolve_data_dir(_ROOT)
+ensure_data_dir(_DATA_DIR)
+os.environ["SLASHBOT_DATA_DIR"] = _DATA_DIR
 os.chdir(_ROOT)
-_users_file = os.path.join(_ROOT, "bot_users.json")
-print(f"[start_both] Данные: {_users_file}", flush=True)
+_users_file = os.path.join(_DATA_DIR, "bot_users.json")
+print(f"[start_both] Данные: {_DATA_DIR}", flush=True)
+print(f"[start_both] bot_users.json: {_users_file}", flush=True)
+
+acquire_bot_lock(_DATA_DIR)
 
 
 def run_web(port: int) -> None:

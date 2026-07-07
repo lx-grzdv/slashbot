@@ -199,6 +199,55 @@ Telegram принимает в `CommandHandler` только **латиницу*
 
 ---
 
+### Conflict: terminated by other getUpdates request
+
+Два процесса с одним `BOT_TOKEN` одновременно делают polling.
+
+**Что делать:**
+
+1. Останови локальный бот (`Ctrl+C` или `./start_bot.sh` не запускай параллельно с Railway).
+2. На Railway: **Settings → Replicas = 1** (в репо есть `railway.toml` с `numReplicas = 1`).
+3. При деплое старый контейнер может жить 1–2 мин — бот сам завершится после 8 Conflict подряд.
+4. `start_both.py` держит файловую блокировку `.bot.lock` — второй локальный запуск сразу упадёт.
+
+---
+
+### LLM meme failed: HTTP 400
+
+При старте бот пишет `✅ LLM: …` или `⚠️ LLM: HTTP 400 …` с телом ошибки.
+
+| Причина | Решение |
+|---------|---------|
+| Неверный ключ | Variables → `OPENAI_API_KEY` |
+| Неверная модель | `MEME_LLM_MODEL=gpt-4o-mini` |
+| Неверный URL | `OPENAI_BASE_URL=https://api.openai.com/v1` (без `/chat/completions` на конце) |
+| Модель без temperature | бот повторит запрос без temperature автоматически |
+
+---
+
+### Данные сбрасываются после redeploy
+
+1. Railway → сервис **slashbot** → **Volumes** → **Add Volume**
+2. Mount path: **`/data`**
+3. Redeploy
+
+Бот автоматически пишет в `/data`: `bot_users.json`, `bot_settings.json`, `meme_state.json`.
+
+Переопределить каталог: Variable `SLASHBOT_DATA_DIR=/data`.
+
+---
+
+### S:P9 works: бот не видит сообщения / нет истории для мемов
+
+При старте смотри лог: `✅ SP9 works: бот — administrator` или предупреждение.
+
+**Исправление (одно из двух):**
+
+1. @BotFather → **Group Privacy → Turn off**
+2. Назначить @ag_slashbot **администратором** группы S:P9 works
+
+---
+
 ### Прочее
 
 - **"Application failed to respond":** сервис Web без процесса на `PORT`. Используй `start_both.py` или `web_app.py`, не голый `bot.py` на Web-сервисе.

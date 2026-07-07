@@ -1,16 +1,24 @@
+import os
 import random
 import asyncio
 import warnings
 import datetime as dt
+from typing import Optional
+
+from app_data import ensure_data_dir, resolve_data_dir
+
+_BOT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if not os.environ.get("SLASHBOT_DATA_DIR"):
+    os.environ["SLASHBOT_DATA_DIR"] = resolve_data_dir(_BOT_ROOT)
+ensure_data_dir(os.environ["SLASHBOT_DATA_DIR"])
+
 from telegram import Update, Bot, BotCommand
 from telegram.warnings import PTBUserWarning
 # В v20 days уже в формате cron (1=пн, 5=пт) — подавляем предупреждение
 warnings.filterwarnings("ignore", message=".*days.*parameter.*cron", category=PTBUserWarning)
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest
-import os
 import time
-from typing import Optional
 try:
     from config import BOT_TOKEN
 except ModuleNotFoundError:
@@ -21,14 +29,20 @@ import json
 from meme_replies import (
     force_meme_reply,
     generate_silence_meme,
+    generate_sp9_scheduled_meme,
+    load_meme_state,
     maybe_meme_reply,
+    mark_meme_sent,
     mark_silence_meme_sent,
+    probe_llm_api,
     record_chat_message,
+    save_meme_state,
     silence_meme_candidates,
     touch_chat_activity,
     SILENCE_MEME_CHECK_SEC,
     SILENCE_MEME_ENABLED,
     SILENCE_MEME_SEC,
+    SP9_SCHEDULED_MEME_ENABLED,
 )
 from pasha_persona import (
     BOT_MENTION,
@@ -55,10 +69,15 @@ CHAT_IDS = set()  # Множество ID всех чатов (личных и �
 # Не спамить несколькими реакциями подряд (дубль polling / быстрый повтор «готово»)
 PASHA_BACKGROUND_COOLDOWN_SEC = 15.0
 _last_pasha_background_reply: dict[tuple[int, int], float] = {}
+_conflict_times: list[float] = []
 
 # Фиксированное расписание для чата S:P9 works
 SP9_WORKS_CHAT_ID = int(os.getenv("SP9_WORKS_CHAT_ID", "-1002413642408"))
 SP9_SYNC_TEXT = "Синкуемся?"
+SP9_AFTERNOON_MEME_HOUR = int(os.getenv("SP9_AFTERNOON_MEME_HOUR", "15"))
+SP9_AFTERNOON_MEME_MIN = int(os.getenv("SP9_AFTERNOON_MEME_MIN", "0"))
+SP9_EVENING_MEME_HOUR = int(os.getenv("SP9_EVENING_MEME_HOUR", "18"))
+SP9_EVENING_MEME_MIN = int(os.getenv("SP9_EVENING_MEME_MIN", "0"))
 
 
 def moscow_time(hour: int, minute: int = 0) -> dt.time:
@@ -804,6 +823,24 @@ async def send_friday_broadcast(context: ContextTypes.DEFAULT_TYPE) -> None:
     
     print(f"📊 Рассылка завершена: успешно={success_count}, ошибок={error_count}")
 
+async def check_sp9_group_access(app: Application) -> None:
+    """Проверяет, видит ли бот сообщения в S:P9 works (admin или Group Privacy off)."""
+    try:
+        me = await app.bot.get_me()
+        member = await app.bot.get_chat_member(SP9_WORKS_CHAT_ID, me.id)
+        status = getattr(member, "status", "")
+        if status in ("administrator", "creator"):
+            print(f"✅ SP9 works: бот — {status}, видит все сообщения группы")
+            return
+        print("⚠️ SP9 works: бот НЕ администратор группы")
+        print("   При включённой Group Privacy бот не видит обычные сообщения → нет истории для мемов.")
+        print("   Исправление (одно из двух):")
+        print("   1. @BotFather → Bot Settings → Group Privacy → Turn off")
+        print("   2. Назначить @ag_slashbot администратором чата S:P9 works")
+    except Exception as exc:
+        print(f"⚠️ SP9 works: не удалось проверить доступ к группе {SP9_WORKS_CHAT_ID}: {exc}")
+
+
 async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет в S:P9 works сообщение 'Синкуемся?' по будням в 12:00 МСК."""
     try:
@@ -811,6 +848,28 @@ async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
         print(f"✅ SP9 sync отправлен в чат {SP9_WORKS_CHAT_ID}")
     except Exception as e:
         print(f"❌ Ошибка SP9 sync в чат {SP9_WORKS_CHAT_ID}: {e}")
+
+
+async def send_sp9_scheduled_meme(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Плановый мем в S:P9 works: после обеда (15:00) или вечером (18:00) по будням."""
+    save_meme_state(force=True)
+    slot = context.job.data or "afternoon"
+    if slot == "evening":
+        if dt.datetime.now(MOSCOW_TZ).weekday() == 4:
+            slot = "evening_friday"
+
+    meme = await generate_sp9_scheduled_meme(SP9_WORKS_CHAT_ID, slot)
+    if not meme:
+        print(f"⏭️ SP9 scheduled meme ({slot}): не сгенерировали для чата {SP9_WORKS_CHAT_ID}")
+        return
+
+    try:
+        await context.bot.send_message(chat_id=SP9_WORKS_CHAT_ID, text=meme)
+        mark_meme_sent(SP9_WORKS_CHAT_ID)
+        label = {"afternoon": "🌤️", "evening": "🌆", "evening_friday": "🍻"}.get(slot, "🎭")
+        print(f"{label} SP9 scheduled meme ({slot}) в чат {SP9_WORKS_CHAT_ID}: {meme}")
+    except Exception as e:
+        print(f"❌ SP9 scheduled meme ({slot}) ошибка в чат {SP9_WORKS_CHAT_ID}: {e}")
 
 
 async def track_chat_activity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -968,9 +1027,13 @@ def main() -> None:
     # Загружаем список пользователей
     load_users()
     ensure_sp9_chat_registered()
+    load_meme_state()
+    print(f"💾 Каталог данных: {_DATA_DIR}")
     
-    # Меню команд в Telegram (при нажатии на "/") — чтобы /chat_id и др. были видны
-    async def _set_bot_commands(app: Application) -> None:
+    llm_ok, llm_msg = probe_llm_api()
+    print(f"{'✅' if llm_ok else '⚠️'} LLM: {llm_msg}")
+
+    async def _post_init(app: Application) -> None:
         await app.bot.set_my_commands([
             BotCommand("start", "Запуск @ag_slashbot"),
             BotCommand("help", "Помощь"),
@@ -981,6 +1044,12 @@ def main() -> None:
             BotCommand("status_schedule", "Статус расписания"),
             BotCommand("bot_info", "Инфо о боте"),
         ])
+        await app.bot.delete_webhook(drop_pending_updates=True)
+        await check_sp9_group_access(app)
+
+    async def _post_shutdown(app: Application) -> None:
+        save_meme_state(force=True)
+        save_users()
 
     # Создаем приложение с поддержкой JobQueue (увеличенные таймауты для нестабильной сети)
     request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0, pool_timeout=30.0)
@@ -988,7 +1057,8 @@ def main() -> None:
         Application.builder()
         .token(BOT_TOKEN)
         .request(request)
-        .post_init(_set_bot_commands)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
         .build()
     )
     
@@ -1024,6 +1094,30 @@ def main() -> None:
     # Добавляем универсальный обработчик для любых команд В САМОМ КОНЦЕ
     # Он будет срабатывать на любую команду, которая не обработана выше
     application.add_handler(MessageHandler(filters.Regex(r'^/'), handle_any_command))
+
+    async def log_bot_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        import sys
+        import telegram.error
+
+        global _conflict_times
+        err = context.error
+        if isinstance(err, telegram.error.Conflict):
+            now = time.monotonic()
+            _conflict_times.append(now)
+            _conflict_times[:] = [t for t in _conflict_times if now - t < 120]
+            print(
+                f"⚠️ Conflict ({len(_conflict_times)}/8): другой инстанс делает getUpdates. "
+                "Остановите локальный бот или второй деплой."
+            )
+            if len(_conflict_times) >= 8:
+                print("❌ Conflict не прекращается — завершаем процесс.")
+                save_meme_state(force=True)
+                save_users()
+                sys.exit(2)
+            return
+        print(f"❌ Необработанная ошибка: {err}")
+
+    application.add_error_handler(log_bot_error)
     
     # Настраиваем расписание для ежедневной отправки сообщения "Че как там по макетам"
     job_queue = application.job_queue
@@ -1070,6 +1164,24 @@ def main() -> None:
         data=None
     )
 
+    if SP9_SCHEDULED_MEME_ENABLED:
+        job_queue.run_daily(
+            send_sp9_scheduled_meme,
+            time=moscow_time(SP9_AFTERNOON_MEME_HOUR, SP9_AFTERNOON_MEME_MIN),
+            days=(1, 2, 3, 4, 5),
+            name='sp9_afternoon_meme',
+            chat_id=SP9_WORKS_CHAT_ID,
+            data='afternoon',
+        )
+        job_queue.run_daily(
+            send_sp9_scheduled_meme,
+            time=moscow_time(SP9_EVENING_MEME_HOUR, SP9_EVENING_MEME_MIN),
+            days=(1, 2, 3, 4, 5),
+            name='sp9_evening_meme',
+            chat_id=SP9_WORKS_CHAT_ID,
+            data='evening',
+        )
+
     if SILENCE_MEME_ENABLED:
         job_queue.run_repeating(
             check_silence_memes,
@@ -1100,6 +1212,16 @@ def main() -> None:
     print(f"      💬 Сообщение: 'Эх, а скоро дудосинг...'")
     print(f"   🕛 S:P9 works (ПН-ПТ): в 12:00 МСК")
     print(f"      💬 Сообщение: '{SP9_SYNC_TEXT}'")
+    if SP9_SCHEDULED_MEME_ENABLED:
+        print(
+            f"   🌤️ S:P9 послеобеденный мем (ПН-ПТ): "
+            f"в {SP9_AFTERNOON_MEME_HOUR:02d}:{SP9_AFTERNOON_MEME_MIN:02d} МСК"
+        )
+        print(
+            f"   🌆 S:P9 вечерний мем (ПН-ПТ): "
+            f"в {SP9_EVENING_MEME_HOUR:02d}:{SP9_EVENING_MEME_MIN:02d} МСК "
+            f"(в пятницу — напутствие на выходные)"
+        )
     if SILENCE_MEME_ENABLED:
         silence_hours = int(SILENCE_MEME_SEC // 3600)
         check_min = int(SILENCE_MEME_CHECK_SEC // 60)

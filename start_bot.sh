@@ -3,13 +3,14 @@
 cd "$(dirname "$0")"
 
 echo "🛑 Останавливаем все старые экземпляры бота..."
+pkill -9 -f "python.*start_both.py" 2>/dev/null || true
 pkill -9 -f "python.*bot.py" 2>/dev/null || true
 sleep 3
 # Проверяем, что ничего не осталось (иначе будет Conflict в Telegram)
-if pgrep -f "python.*bot.py" >/dev/null; then
+if pgrep -f "python.*(start_both|bot).py" >/dev/null; then
     echo "⚠️  Ещё остались процессы бота, ждём..."
     sleep 3
-    pkill -9 -f "python.*bot.py" 2>/dev/null || true
+    pkill -9 -f "python.*(start_both|bot).py" 2>/dev/null || true
     sleep 2
 fi
 
