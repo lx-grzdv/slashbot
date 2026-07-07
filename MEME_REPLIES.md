@@ -39,11 +39,14 @@ bot.py: handle_text_message()
 
 ### История чата
 
-Бот хранит в памяти **последние 24 сообщения** на каждый `chat_id`. История:
+Бот хранит **последние 24 сообщения** на каждый `chat_id`:
 
 - накапливается на каждом входящем текстовом сообщении;
-- **не пишется на диск** — сбрасывается при перезапуске;
-- используется как контекст для LLM и шаблонов.
+- **сохраняется на диск** в `meme_state.json` (каталог `SLASHBOT_DATA_DIR`, на Railway — `/data`);
+- используется как контекст для LLM, плановых мемов S:P9 и шаблонов;
+- активность чата (для «мема после тишины») тоже персистится.
+
+Без Volume на Railway история **сбрасывается при redeploy**. См. [OPERATIONS.md](OPERATIONS.md).
 
 ---
 
@@ -199,10 +202,15 @@ bot.py: handle_text_message()
 | `MEME_LLM_CHANCE` | нет | `0.85` | Доля случайных мемов через LLM (0–1) |
 | `MEME_LLM_TIMEOUT_SEC` | нет | `12` | Таймаут запроса к API, сек |
 | `OPENAI_BASE_URL` | нет | `https://api.openai.com/v1` | Базовый URL (прокси / совместимый API) |
+| `SLASHBOT_DATA_DIR` | нет | `/data` или каталог проекта | `meme_state.json`, persistence истории |
+| `SP9_SCHEDULED_MEME_ENABLED` | нет | `1` | `0` — выключить плановые мемы S:P9 |
+| `SP9_AFTERNOON_MEME_HOUR` | нет | `15` | Час послеобеденного мема (МСК) |
+| `SP9_EVENING_MEME_HOUR` | нет | `18` | Час вечернего мема (МСК) |
 | `SILENCE_MEME_HOURS` | нет | `3` | Часов тишины в группе до мема |
 | `SILENCE_MEME_CHECK_MIN` | нет | `20` | Как часто проверять тишину, мин |
 | `SILENCE_MEME_ENABLED` | нет | `1` | `0` — выключить мем после тишины |
-| `SLASHBOT_DATA_DIR` | нет | `/data` или каталог проекта | `meme_state.json`, `bot_users.json` (Volume на Railway) |
+
+Volume на Railway: [OPERATIONS.md](OPERATIONS.md).
 
 `OPENAI_BASE_URL` не нужен при обычном ключе OpenAI.
 
@@ -244,8 +252,13 @@ MEME_LLM_CHANCE=0.85
 |---|---|
 | `🎭 Мемная реплика в чат …` | Случайный мем отправлен |
 | `🎭 Force meme в чат …` | Мем по команде `/meme` |
-| `🧠 LLM meme: …` | Ответ сгенерировала нейронка |
-| `⚠️ LLM meme failed: …` | Ошибка API → fallback или пустой ответ |
+| `🌤️ SP9 scheduled meme (afternoon)…` | Плановый мем 15:00 МСК |
+| `🌆 SP9 scheduled meme (evening)…` | Плановый мем 18:00 МСК |
+| `🍻 SP9 scheduled meme (evening_friday)…` | Пятничное напутствие 18:00 |
+| `🧠 LLM meme: …` / `🧠 LLM scheduled meme: …` | Ответ сгенерировала нейронка |
+| `✅ LLM: …` (при старте) | Проверка API прошла |
+| `⚠️ LLM meme failed: …` | Ошибка API → fallback |
+| `💾 История чатов загружена: …` | `meme_state.json` прочитан с диска |
 
 ### Быстрая проверка локально
 

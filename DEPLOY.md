@@ -125,7 +125,7 @@ python bot.py
 ## Что важно при деплое
 
 - **Токен:** нигде не коммить `config.py` с реальным токеном. Использовать переменные окружения (`BOT_TOKEN`) или секреты платформы.
-- **Файлы данных:** `bot_settings.json`, `bot_users.json`, `meme_state.json` (история чатов для мемов) на Railway/Render создаются в файловой системе воркера; при новом деплое они могут сброситься. **Обязательно** подключи Volume (см. ниже и [RAILWAY_SETUP.md](RAILWAY_SETUP.md)).
+- **Файлы данных:** `bot_settings.json`, `bot_users.json`, `meme_state.json` на Railway должны жить на **Volume `/data`**. Без Volume — сброс при redeploy. Пошагово: **[OPERATIONS.md](OPERATIONS.md)** → Volume `/data`.
 - **Веб-интерфейс:** см. раздел ниже.
 - **Сборка Python на Railway:** в корне лежит `mise.toml` — отключает проверку GitHub attestations для mise (иначе билд может упасть на старых версиях Python).
 - **Один процесс бот+веб:** `start_both.py` — бот в главном потоке (polling), Flask в фоне на `PORT`. Не меняй порядок потоков без необходимости (см. [RAILWAY_SETUP.md](RAILWAY_SETUP.md) → troubleshooting).
@@ -140,9 +140,11 @@ python bot.py
 | `Command 'паша' is not a valid bot command` | Кириллица в `CommandHandler` | Только латиница в `CommandHandler`; `/паша` — в `handle_any_command` |
 | Веб работает, бот молчит | `run_polling` не в main thread | `start_both.py`: бот в главном потоке |
 | Сервис Active, бот не отвечает | Поток бота упал, Flask жив | Смотреть **Logs** целиком, не только статус |
+| `[start_both] Данные: /app` | Нет Volume | Mount `/data`, `SLASHBOT_DATA_DIR=/data` — [OPERATIONS.md](OPERATIONS.md) |
+| `Conflict: getUpdates` | Два инстанса бота | Останови локальный бот, Replicas=1 |
 | Нет `BOT_TOKEN` | Переменная не задана | Railway → Variables |
 
-Подробнее: **[RAILWAY_SETUP.md](RAILWAY_SETUP.md)**.
+Подробнее: **[RAILWAY_SETUP.md](RAILWAY_SETUP.md)**, **[OPERATIONS.md](OPERATIONS.md)**.
 
 ---
 

@@ -109,21 +109,57 @@ Railway (Railpack) подхватывает его автоматически. *
 ## Шаг 6: Проверить деплой
 
 1. На вкладке **Deployments** последний деплой — **Success** / **Active**.
-2. В **Logs** должны быть строки:
+2. В **Logs** должны быть строки (с Volume на `/data`):
    ```
-   [start_both] Данные: /app/bot_users.json
+   Mounting volume on: ...
+   [start_both] Данные: /data
+   [start_both] bot_users.json: /data/bot_users.json
+   💾 Каталог данных: /data
+   ✅ LLM: gpt-4o-mini @ ... — ok (...)
+   ✅ SP9 works: бот — administrator ...
    🤖 Бот @ag_slashbot запущен!
-   📝 Жду сообщения...
+   🌤️ S:P9 послеобеденный мем (ПН-ПТ): в 15:00 МСК
    🌐 Веб-панель: http://0.0.0.0:8080
    ```
 3. **Не должно быть** после «Бот запущен» строки `[start_both] Ошибка бота`.
 4. В Telegram: `/start` у [@ag_slashbot](https://t.me/ag_slashbot) — бот отвечает.
 
+Если в логах `[start_both] Данные: /app` — см. **Шаг 7** (Volume).
+
 Если в логах ошибка про токен — проверь `BOT_TOKEN` без пробелов.
 
 ---
 
-## Шаг 7: (По желанию) Не светить токен в коде
+## Шаг 7: Volume `/data` (обязательно для продакшена)
+
+Без Volume `bot_users.json` и история мемов **стираются при redeploy**.
+
+### 7.1. Добавить Volume
+
+1. Сервис **slashbot** → вкладка **Volumes**.
+2. **Add Volume**.
+3. **Mount Path:** `/data`.
+4. Сохрани.
+
+### 7.2. Variable
+
+**Variables** → добавь:
+
+| Variable | Value |
+|----------|--------|
+| `SLASHBOT_DATA_DIR` | `/data` |
+
+### 7.3. Redeploy и проверка
+
+1. **Deployments** → **Redeploy**.
+2. В Logs: `[start_both] Данные: /data`.
+3. Напиши боту / в S:P9 → ещё раз Redeploy → `👥 Загружено чатов: N` (не «создается новый»).
+
+**Пошагово с картинками симптомов:** [OPERATIONS.md](OPERATIONS.md) → Volume `/data`.
+
+---
+
+## Шаг 8: (По желанию) Не светить токен в коде
 
 Сейчас в `config.py` может быть запасной токен в `os.getenv('BOT_TOKEN', '...')`. На Railway используется переменная окружения, но в репозитории лучше не хранить реальный токен:
 
@@ -144,9 +180,13 @@ Railway (Railpack) подхватывает его автоматически. *
 | 1 | Код в GitHub |
 | 2 | Войти на railway.app через GitHub |
 | 3 | New Project → Deploy from GitHub repo → выбрать `slashbot` |
-| 4 | Variables → `BOT_TOKEN` (+ `WEB_USER` / `WEB_PASSWORD` для панели; опционально `OPENAI_API_KEY` для мемов) |
-| 5 | Procfile уже `web: python start_both.py` — ничего не менять |
-| 6 | Deployments + Logs → `🤖 Бот @ag_slashbot запущен!`; проверить `/start` в Telegram |
+| 4 | Variables → `BOT_TOKEN` (+ `WEB_USER` / `WEB_PASSWORD`; `OPENAI_API_KEY`; `SLASHBOT_DATA_DIR=/data`) |
+| 5 | **Volumes** → mount `/data` → Redeploy |
+| 6 | Procfile уже `web: python start_both.py` — ничего не менять |
+| 7 | Deployments + Logs → `Данные: /data`, `🤖 Бот @ag_slashbot запущен!`; `/start` в Telegram |
+| 8 | @BotFather → Group Privacy **OFF** для S:P9 (или бот — админ группы) |
+
+Полный ops-гайд: **[OPERATIONS.md](OPERATIONS.md)**.
 
 ---
 
@@ -227,13 +267,7 @@ Telegram принимает в `CommandHandler` только **латиницу*
 
 ### Данные сбрасываются после redeploy
 
-1. Railway → сервис **slashbot** → **Volumes** → **Add Volume**
-2. Mount path: **`/data`**
-3. Redeploy
-
-Бот автоматически пишет в `/data`: `bot_users.json`, `bot_settings.json`, `meme_state.json`.
-
-Переопределить каталог: Variable `SLASHBOT_DATA_DIR=/data`.
+См. **Шаг 7** выше и **[OPERATIONS.md](OPERATIONS.md)** — Volume mount `/data`, Variable `SLASHBOT_DATA_DIR=/data`.
 
 ---
 
