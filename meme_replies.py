@@ -36,6 +36,7 @@ MEME_LLM_TIMEOUT_SEC = float(os.getenv("MEME_LLM_TIMEOUT_SEC", "12"))
 MEME_LLM_HISTORY_LINES = int(os.getenv("MEME_LLM_HISTORY_LINES", "40"))
 MEME_FORCE_COOLDOWN_SEC = 20.0
 MEME_FORCE_FALLBACK_PROMPT = "в чате тишина, все притворяются что макет гуд, а дедлайн горит"
+DURDACH_SCHEDULED_CHANCE = float(os.getenv("DURDACH_SCHEDULED_CHANCE", "0.45"))
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 SILENCE_MEME_ENABLED = os.getenv("SILENCE_MEME_ENABLED", "1").strip().lower() not in ("0", "false", "no")
@@ -75,8 +76,6 @@ SP9_EVENING_FALLBACKS = (
     "ну всё, сворачиваемся — завтра снова притворимся что успеем",
     "18:00: дедлайн завтра, а сегодня уже морально в дудосинге",
     "на ночь глядя: {snippet} — звучит как план на завтра",
-    "мне похуй, какая там у тебя тачка и яхта — у меня {snippet}, и я иду к реке",
-    "я уже как глубокий старец узревший вечное: {snippet}. осталось только закрыть фигму",
 )
 
 SP9_EVENING_FRIDAY_FALLBACKS = (
@@ -84,8 +83,6 @@ SP9_EVENING_FRIDAY_FALLBACKS = (
     "ну всё, выходные: макеты сами себя не сделают, но мы попробуем не думать",
     "скоро дудосинг, а макет всё ещё «на финале» — классика пятницы",
     "пятничный финал: {snippet} — и в понедельник снова «почти гуд»",
-    "пятница: преисполнился в познании настолько, что {snippet} уже не цепляет — только дудосинг и река",
-    "это триумф свободы от синка и макетов: {snippet}. иду к реке, а вы там доделывайте",
 )
 
 SP9_SLOT_LLM_FOCUS = {
@@ -106,6 +103,33 @@ SP9_SLOT_LLM_FOCUS = {
     ),
 }
 
+DURDACH_LLM_FOCUS = (
+    "РЕЖИМ «ДУР-ДАЧНИК, ИДУЩИЙ К РЕКЕ»: дачный речной чудик, грубовато-добродушный, "
+    "без длинного псевдофилософского монолога и без цитирования «триллионов планет». "
+    "Рабочий бред из чата объясни через реку, сапоги, тину, термос, чай, пень, ведро, лодку, "
+    "комаров, камыш, грязь или бесклёвье. Говори коротко, рублено: 1–2 фразы. "
+    "Можно мягко поддеть: карась городской, пень с амбициями, чудо огородное, лапоть глянцевый, "
+    "философ с ведром. Punchline должен быть про конкретный макет/синк/ноукод/checkout/коммент из чата."
+)
+
+DURDACH_FALLBACKS = (
+    "мне бы к камышам, а не к этому «{snippet}» — сапог в тине и то понятнее держится",
+    "«{snippet}» лежит как ведро без ручки: вроде вещь, а нести стыдно",
+    "ну что, караси городские, «{snippet}» у вас сегодня как бесклёвье: все смотрят и делают вид, что процесс идёт",
+    "синк ваш нервный, как карась перед грозой; после «{snippet}» я бы чай налил и не трогал фигму",
+    "ноукод сегодня как берег после дождя: уверенно идёшь в «{snippet}», потом молча вытаскиваешь сапоги",
+    "у воды и дурак мыслит глубже, а у нас «{snippet}» — пень с амбициями и комментом во фрейме",
+    "сапоги — это уважение к действительности, а «{snippet}» — просто тропа в тину с красивым названием",
+    "где тина, там и философия; где «{snippet}», там дизайнеры опять делают вид, что клёв будет",
+)
+
+DURDACH_MASHUP_TEMPLATES = (
+    "сначала «{a}», потом «{b}» — ну всё, лапти сушить, макет в тине",
+    "«{a}» и «{b}» — два поплавка в одном болоте, оба делают вид что это стратегия",
+    "после «{a}» и «{b}» я понял: город учит спешить, фигма учит не выпендриваться",
+    "«{a}», потом «{b}» — чай в термосе горячий, а планы как всегда сырые",
+)
+
 BLAND_MEME = re.compile(
     r"тишина в чате|на уровне|прям как в классике|спокойно работа|звучит как название стартапа|"
     r"буквально мы|мем дня:|удался$|без вариантов|это же гениально|на душе|"
@@ -118,11 +142,11 @@ LLM_SYSTEM_PROMPT = """\
 
 СТИЛЬ (обязательно — выбери ОДИН режим на ответ):
 1) кринж S:P9: стыдно-смешно, пассивная агрессия, абсурд, как будто дедлайн уже съел уважение
-2) «идущий к реке» / Дур-Дачник: псевдофилософский пафос + мат, преисполнение, триллионы планет, похуй на тачки/яхты/финалы, триумф свободы от эго; но punchline обязательно про реальный рабочий бред из чата (фигма, макет, синк, рендер, дедлайн)
+2) «дур-дачник, идущий к реке»: грубовато-добродушный дачный чудик, который объясняет рабочий бред через реку, сапоги, тину, термос, чай, пень, ведро, лодку, комаров и бесклёвье; punchline обязательно про реальный рабочий бред из чата
 
-- рабочий мат уместно: бля, блэт, зашквар, всратость, говно, жопа горит, херово, похуй
+- рабочий мат уместно: бля, блэт, зашквар, всратость, говно, жопа горит, херово
 - искажай фразы из чата — уничижительно, но смешно; делай punchline, а не пересказ
-- референсы: дудосинг, ноукод, шакальные макеты, понаехали дизайнеры, рендер, фигма, синк, река, преисполнился
+- референсы: дудосинг, ноукод, шакальные макеты, понаехали дизайнеры, рендер, фигма, синк, река, сапоги, тина, термос, камыш
 - лучше одна точная шутка про 1–2 события дня, чем общий комментарий «классика»
 - если историй мало — всё равно смешно выдумывай в стиле, но не залипай на одних и тех же словах
 
@@ -132,6 +156,7 @@ LLM_SYSTEM_PROMPT = """\
 - мотивация, советы, объяснения, нравоучения
 - @, ссылки, кавычки вокруг всего ответа
 - повторять вчерашние мемы про sync/checkout/espresso/коммент во фрейме — бери свежий угол
+- длинный монолог «я преисполнился на триллионах планет» — это уже заезжено; используй дачную предметность вместо цитат
 
 ОБЯЗАТЕЛЬНО:
 - анализируй сообщения сегодняшнего дня и опирайся на 1–2 конкретные реплики, ЕСЛИ они есть
@@ -145,9 +170,9 @@ LLM_SYSTEM_PROMPT = """\
 - ахах забыли очередь узбеков в рендер добавить
 
 Примеры тона (идущий к реке):
-- я в своём познании настолько преисполнился, что ваш синк мне как пыль на ботинке у реки
-- мне похуй, какая у тебя тачка и яхта — у нас макет всратый, а я уже узревший вечное
-- это триумф свободы от фигмы: иду к реке, а дедлайн пусть сам себя закроет
+- мне бы к камышам, а не к этому checkout — сапог в тине и то понятнее держится
+- коммент во фрейме лежит как ведро без ручки: вроде вещь, а нести стыдно
+- синк ваш нервный, как карась перед грозой; я бы чай налил и не трогал макет до утра
 
 До 180 символов. Только текст реплики."""
 
@@ -167,9 +192,6 @@ MEME_TEMPLATES = [
     "ну да, {snippet} — отличный способ сказать клиенту «мы всё контролируем»",
     "S:P9 сегодня: {snippet}. Осталось только назвать это концепцией",
     "после «{snippet}» фигма сама должна попросить больничный",
-    "я в своём познании настолько преисполнился, что «{snippet}» мне уже как пыль на дороге к реке",
-    "мне похуй на твои статусы и апрувы — «{snippet}», а я уже узревший вечное",
-    "это триумф свободы от дедлайна: после «{snippet}» только река и дудосинг",
 ]
 
 MASHUP_TEMPLATES = [
@@ -179,8 +201,6 @@ MASHUP_TEMPLATES = [
     "{a}? ок. но потом {b} — и я уже не уверен в реальности",
     "день начался с «{a}», докатился до «{b}» — прекрасный ноукодный ад",
     "{a}, потом {b}; короче макет сам понял, что его всрали",
-    "преисполнился: сначала «{a}», потом «{b}» — иду к реке, вам тут разгребать",
-    "мне похуй на «{a}» и «{b}»: это уже разговор существа, свободного от фигмы",
 ]
 
 DANGLING_WORDS = frozenset({
@@ -742,6 +762,49 @@ def _build_meme(source_texts: list[str]) -> Optional[str]:
     return None
 
 
+def _build_durdach_meme(source_texts: list[str]) -> Optional[str]:
+    phrases = _collect_phrases(source_texts)
+    snippet = _shorten_snippet(random.choice(phrases)) if phrases else "макет почти гуд"
+
+    for _ in range(20):
+        if len(phrases) >= 2 and random.random() < 0.35:
+            raw_a, raw_b = random.sample(phrases, 2)
+            a = _shorten_snippet(raw_a)
+            b = _shorten_snippet(raw_b)
+            template = random.choice(DURDACH_MASHUP_TEMPLATES)
+            try:
+                result = template.format(a=a, b=b)
+            except (KeyError, IndexError):
+                continue
+        else:
+            template = random.choice(DURDACH_FALLBACKS)
+            try:
+                result = template.format(snippet=snippet)
+            except (KeyError, IndexError):
+                continue
+
+        if _is_valid_meme(result):
+            return result
+
+    for template in DURDACH_FALLBACKS:
+        try:
+            result = template.format(snippet=snippet)
+        except (KeyError, IndexError):
+            continue
+        if _is_valid_meme(result):
+            return result
+
+    generic = "у воды и дурак мыслит глубже, а этот макет всё равно как ведро без ручки"
+    return generic if _is_valid_meme(generic) else None
+
+
+def _shorten_snippet(text: str, max_len: int = 54) -> str:
+    cleaned = _normalize(text)
+    if len(cleaned) <= max_len:
+        return cleaned
+    return cleaned[: max_len - 1].rstrip(" ,.;:—–-") + "…"
+
+
 def _generate_meme(
     current_text: str,
     recent_texts: list[str],
@@ -848,6 +911,20 @@ def _scheduled_meme_config(slot: str) -> tuple[str, tuple[str, ...]]:
     return SP9_EVENING_MEME_PROMPT, SP9_EVENING_FALLBACKS
 
 
+def _scheduled_durdach_chance(slot: str) -> float:
+    if slot == "afternoon":
+        return max(0.0, DURDACH_SCHEDULED_CHANCE - 0.10)
+    if slot == "evening_friday":
+        return min(1.0, DURDACH_SCHEDULED_CHANCE + 0.15)
+    return DURDACH_SCHEDULED_CHANCE
+
+
+def _should_use_durdach(slot: str, history: list[str]) -> bool:
+    if not history:
+        return False
+    return random.random() < _scheduled_durdach_chance(slot)
+
+
 def _pick_scheduled_fallback(fallbacks: tuple[str, ...], history: list[str]) -> str:
     phrases = _collect_phrases(history) if history else []
     snippet = random.choice(phrases) if phrases else "макет почти гуд"
@@ -870,12 +947,16 @@ async def generate_sp9_scheduled_meme(chat_id: int, slot: str) -> Optional[str]:
     _, fallbacks = _scheduled_meme_config(slot)
     history = _today_history(chat_id) or list(_chat_history.get(chat_id, []))
     focus = SP9_SLOT_LLM_FOCUS.get(slot, SP9_SLOT_LLM_FOCUS["evening"])
+    prefer_durdach = _should_use_durdach(slot, history)
+    if prefer_durdach:
+        focus = f"{focus}\n{DURDACH_LLM_FOCUS}"
 
     meme = await asyncio.to_thread(
         _generate_scheduled_sp9_meme,
         history,
         focus,
         fallbacks,
+        prefer_durdach,
     )
     return meme
 
@@ -884,6 +965,7 @@ def _generate_scheduled_sp9_meme(
     history: list[str],
     focus: str,
     fallbacks: tuple[str, ...],
+    prefer_durdach: bool = False,
 ) -> Optional[str]:
     if OPENAI_API_KEY:
         meme = _generate_meme_with_llm_retries(
@@ -893,11 +975,18 @@ def _generate_scheduled_sp9_meme(
             focus=focus,
         )
         if meme:
-            print(f"🧠 LLM scheduled meme: {meme}")
+            label = "durdach " if prefer_durdach else ""
+            print(f"🧠 LLM {label}scheduled meme: {meme}")
             return meme
         print("⚠️ LLM scheduled meme empty, fallback to phrases")
 
     sources = list(history) if history else [focus]
+    if prefer_durdach:
+        built_durdach = _build_durdach_meme(sources)
+        if built_durdach:
+            return built_durdach
+        return _pick_scheduled_fallback(DURDACH_FALLBACKS, history)
+
     built = _build_meme(sources)
     if built:
         return built
