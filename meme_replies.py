@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import json
 import os
 import random
@@ -16,11 +17,13 @@ import urllib.error
 import urllib.request
 from collections import deque
 from typing import Deque, Optional
+from zoneinfo import ZoneInfo
 
 MEME_CHANCE_GROUP = 0.035
 MEME_CHANCE_PRIVATE = 0.012
 MEME_COOLDOWN_SEC = 420.0
 MEME_HISTORY_SIZE = 24
+MEME_DAILY_HISTORY_SIZE = 220
 MEME_MIN_HISTORY = 2
 MEME_MIN_TEXT_LEN = 6
 MEME_MAX_LEN = 140
@@ -30,9 +33,10 @@ OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstr
 MEME_LLM_MODEL = os.getenv("MEME_LLM_MODEL", "gpt-4o-mini")
 MEME_LLM_CHANCE = float(os.getenv("MEME_LLM_CHANCE", "0.85"))
 MEME_LLM_TIMEOUT_SEC = float(os.getenv("MEME_LLM_TIMEOUT_SEC", "12"))
-MEME_LLM_HISTORY_LINES = 8
+MEME_LLM_HISTORY_LINES = int(os.getenv("MEME_LLM_HISTORY_LINES", "40"))
 MEME_FORCE_COOLDOWN_SEC = 20.0
 MEME_FORCE_FALLBACK_PROMPT = "в чате тишина, все притворяются что макет гуд, а дедлайн горит"
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 SILENCE_MEME_ENABLED = os.getenv("SILENCE_MEME_ENABLED", "1").strip().lower() not in ("0", "false", "no")
 SILENCE_MEME_SEC = float(os.getenv("SILENCE_MEME_HOURS", "3")) * 3600.0
@@ -100,13 +104,14 @@ BLAND_MEME = re.compile(
 )
 
 LLM_SYSTEM_PROMPT = """\
-Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии S:P9. Напиши ОДНУ короткую кринжовую провокационную реплику по переписке.
+Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии S:P9. Напиши ОДНУ короткую смешную кринжовую провокационную реплику по переписке за день.
 
 СТИЛЬ (обязательно):
-- кринж, стыдно-смешно, пассивная агрессия, абсурд, неудобный юмор
+- кринж, стыдно-смешно, пассивная агрессия, абсурд, неудобный юмор, как будто дедлайн уже съел уважение
 - рабочий мат уместно: бля, блэт, зашквар, всратость, говно, жопа горит, херово
-- искажай фразы из чата — уничижительно, но смешно
+- искажай фразы из чата — уничижительно, но смешно; делай punchline, а не пересказ
 - референсы: дудосинг, ноукод, шакальные макеты, понаехали дизайнеры, рендер, фигма, синк
+- лучше одна точная шутка про два события дня, чем общий комментарий «классика»
 
 ЗАПРЕЩЕНО:
 - bland корпоративный юмор («тишина в чате», «на уровне гуд», «классика ахах» без укуса)
@@ -115,9 +120,10 @@ LLM_SYSTEM_PROMPT = """\
 - @, ссылки, кавычки вокруг всего ответа
 
 ОБЯЗАТЕЛЬНО:
-- опирайся на 1–2 конкретные реплики из переписки (экспрессо, синк, промо, checkout, коммент во фрейме…)
+- анализируй сообщения сегодняшнего дня и опирайся на 1–2 конкретные реплики (экспрессо, синк, промо, checkout, коммент во фрейме…)
 - грамматически цельное предложение, чтобы было понятно без контекста чата
 - можно связать два события из чата в один абсурдный вывод
+- если в контексте есть список «темы дня», используй его как карту, но шути по реальным репликам ниже
 
 Примеры тона:
 - бля как же жопа горит от таких макетов
@@ -141,6 +147,9 @@ MEME_TEMPLATES = [
     "если {snippet} — значит мы обдудосились",
     "блэт {snippet} — звучит как оправдание перед клиентом",
     "честно, {snippet} — это уже не баг, а стиль жизни",
+    "ну да, {snippet} — отличный способ сказать клиенту «мы всё контролируем»",
+    "S:P9 сегодня: {snippet}. Осталось только назвать это концепцией",
+    "после «{snippet}» фигма сама должна попросить больничный",
 ]
 
 MASHUP_TEMPLATES = [
@@ -148,6 +157,8 @@ MASHUP_TEMPLATES = [
     "бля: {a}. и тут же {b}. классика",
     "в чате {a}, а параллельно {b} — зашквар, но гуд",
     "{a}? ок. но потом {b} — и я уже не уверен в реальности",
+    "день начался с «{a}», докатился до «{b}» — прекрасный ноукодный ад",
+    "{a}, потом {b}; короче макет сам понял, что его всрали",
 ]
 
 DANGLING_WORDS = frozenset({
@@ -174,6 +185,7 @@ STOP_WORDS = frozenset({
 })
 
 _chat_history: dict[int, Deque[str]] = {}
+_chat_daily_history: dict[int, Deque[dict[str, object]]] = {}
 _last_meme_reply: dict[int, float] = {}
 _last_force_meme: dict[tuple[int, int], float] = {}
 _last_chat_activity: dict[int, float] = {}
@@ -185,7 +197,7 @@ MEME_STATE_FILE = os.path.join(_DATA_DIR, "meme_state.json")
 _last_state_save = 0.0
 _state_dirty = False
 STATE_SAVE_INTERVAL_SEC = 30.0
-MEME_STATE_VERSION = 1
+MEME_STATE_VERSION = 2
 
 
 def _normalize_openai_base_url() -> str:
@@ -226,9 +238,55 @@ def _mark_state_dirty() -> None:
     _state_dirty = True
 
 
+def _today_key() -> str:
+    return dt.datetime.now(MOSCOW_TZ).date().isoformat()
+
+
+def _day_key(ts: float) -> str:
+    return dt.datetime.fromtimestamp(ts, MOSCOW_TZ).date().isoformat()
+
+
+def _normalize_daily_record(item: object, fallback_ts: Optional[float] = None) -> Optional[dict[str, object]]:
+    if isinstance(item, str):
+        text = _normalize(item)
+        ts = time.time() if fallback_ts is None else fallback_ts
+    elif isinstance(item, dict):
+        text = _normalize(str(item.get("text", "")))
+        raw_ts = item.get("ts", fallback_ts if fallback_ts is not None else time.time())
+        try:
+            ts = float(raw_ts)
+        except (TypeError, ValueError):
+            ts = time.time()
+    else:
+        return None
+
+    if len(text) < 3:
+        return None
+    return {"ts": ts, "day": _day_key(ts), "text": text}
+
+
+def _prune_daily_history(chat_id: int) -> None:
+    history = _chat_daily_history.get(chat_id)
+    if not history:
+        return
+
+    today = _today_key()
+    todays_records = [item for item in history if item.get("day") == today]
+    _chat_daily_history[chat_id] = deque(todays_records[-MEME_DAILY_HISTORY_SIZE:], maxlen=MEME_DAILY_HISTORY_SIZE)
+
+
+def _today_history(chat_id: int) -> list[str]:
+    _prune_daily_history(chat_id)
+    return [
+        str(item.get("text", ""))
+        for item in _chat_daily_history.get(chat_id, [])
+        if item.get("day") == _today_key() and item.get("text")
+    ]
+
+
 def load_meme_state() -> None:
     """Восстанавливает историю чатов и активность с диска."""
-    global _chat_history, _last_chat_activity, _chat_types, _silence_nudged_activity
+    global _chat_history, _chat_daily_history, _last_chat_activity, _chat_types, _silence_nudged_activity
 
     if not os.path.exists(MEME_STATE_FILE):
         print(f"💾 История чатов: файл не найден ({MEME_STATE_FILE})")
@@ -250,6 +308,33 @@ def load_meme_state() -> None:
             (str(item) for item in messages[-MEME_HISTORY_SIZE:]),
             maxlen=MEME_HISTORY_SIZE,
         )
+
+    daily_histories = data.get("daily_history", {})
+    for raw_chat_id, messages in daily_histories.items():
+        chat_id = int(raw_chat_id)
+        if not isinstance(messages, list):
+            continue
+        normalized = []
+        for item in messages[-MEME_DAILY_HISTORY_SIZE:]:
+            record = _normalize_daily_record(item)
+            if record:
+                normalized.append(record)
+        _chat_daily_history[chat_id] = deque(normalized, maxlen=MEME_DAILY_HISTORY_SIZE)
+        _prune_daily_history(chat_id)
+
+    # Мягкая миграция старого состояния: последние реплики считаем сегодняшним контекстом,
+    # чтобы после деплоя плановый мем не ослеп до новых сообщений.
+    now = time.time()
+    for chat_id, history in _chat_history.items():
+        if chat_id in _chat_daily_history and _chat_daily_history[chat_id]:
+            continue
+        records = []
+        for text in list(history)[-MEME_DAILY_HISTORY_SIZE:]:
+            record = _normalize_daily_record(text, fallback_ts=now)
+            if record:
+                records.append(record)
+        if records:
+            _chat_daily_history[chat_id] = deque(records, maxlen=MEME_DAILY_HISTORY_SIZE)
 
     for raw_chat_id, ts in data.get("last_activity", {}).items():
         _last_chat_activity[int(raw_chat_id)] = float(ts)
@@ -274,11 +359,19 @@ def save_meme_state(force: bool = False) -> None:
     if not force and (not _state_dirty or now - _last_state_save < STATE_SAVE_INTERVAL_SEC):
         return
 
+    for chat_id in list(_chat_daily_history):
+        _prune_daily_history(chat_id)
+
     payload = {
         "version": MEME_STATE_VERSION,
         "chat_history": {
             str(chat_id): list(history)
             for chat_id, history in _chat_history.items()
+            if history
+        },
+        "daily_history": {
+            str(chat_id): list(history)
+            for chat_id, history in _chat_daily_history.items()
             if history
         },
         "last_activity": {str(chat_id): ts for chat_id, ts in _last_chat_activity.items()},
@@ -356,6 +449,20 @@ def _words(text: str) -> list[str]:
 
 def _meaningful_words(text: str) -> list[str]:
     return [w for w in _words(text) if w.lower() not in STOP_WORDS]
+
+
+def _top_terms(texts: list[str], limit: int = 10) -> list[str]:
+    counts: dict[str, int] = {}
+    for text in texts:
+        for word in _meaningful_words(text):
+            lowered = word.lower()
+            if len(lowered) < 4:
+                continue
+            counts[lowered] = counts.get(lowered, 0) + 1
+    return [
+        word
+        for word, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    ]
 
 
 def _is_coherent_snippet(snippet: str) -> bool:
@@ -474,7 +581,12 @@ def _llm_context_block(
     if focus:
         lines.append(focus)
     if recent_texts:
-        lines.append("Переписка в чате S:P9 works:")
+        if len(recent_texts) > 12:
+            topics = _top_terms(recent_texts)
+            if topics:
+                lines.append(f"Темы дня: {', '.join(topics)}")
+        label = "Сегодняшняя переписка в чате S:P9 works:" if focus else "Недавняя переписка в чате S:P9 works:"
+        lines.append(label)
         for text in recent_texts[-MEME_LLM_HISTORY_LINES:]:
             lines.append(f"- {_normalize(text)}")
     elif focus:
@@ -645,6 +757,11 @@ def record_chat_message(chat_id: int, text: str) -> None:
     if history and history[-1] == cleaned:
         return
     history.append(cleaned)
+    daily_history = _chat_daily_history.setdefault(chat_id, deque(maxlen=MEME_DAILY_HISTORY_SIZE))
+    now = time.time()
+    if not daily_history or daily_history[-1].get("text") != cleaned:
+        daily_history.append({"ts": now, "day": _day_key(now), "text": cleaned})
+        _prune_daily_history(chat_id)
     _mark_state_dirty()
     save_meme_state()
 
@@ -729,7 +846,7 @@ def _pick_scheduled_fallback(fallbacks: tuple[str, ...], history: list[str]) -> 
 async def generate_sp9_scheduled_meme(chat_id: int, slot: str) -> Optional[str]:
     """Плановый мем для S:P9 works: afternoon | evening | evening_friday."""
     _, fallbacks = _scheduled_meme_config(slot)
-    history = list(_chat_history.get(chat_id, []))
+    history = _today_history(chat_id) or list(_chat_history.get(chat_id, []))
     focus = SP9_SLOT_LLM_FOCUS.get(slot, SP9_SLOT_LLM_FOCUS["evening"])
 
     meme = await asyncio.to_thread(
@@ -819,8 +936,10 @@ async def force_meme_reply(
         return None, f"подожди {wait} сек перед следующим /meme"
 
     history = list(_chat_history.get(chat_id, []))
-    recent = history[:-1] if history else []
-    current = _resolve_force_prompt(prompt_text, history)
+    day_history = _today_history(chat_id)
+    context_history = day_history or history
+    recent = context_history[:-1] if context_history else []
+    current = _resolve_force_prompt(prompt_text, context_history)
 
     meme = await asyncio.to_thread(
         _generate_meme,
@@ -860,7 +979,9 @@ async def maybe_meme_reply(
     if random.random() >= chance:
         return None
 
-    recent = [t for t in history if t != _normalize(message_text)]
+    day_history = _today_history(chat_id)
+    context_history = day_history if len(day_history) >= MEME_MIN_HISTORY else history
+    recent = [t for t in context_history if t != _normalize(message_text)]
     meme = await asyncio.to_thread(
         _generate_meme,
         message_text,
