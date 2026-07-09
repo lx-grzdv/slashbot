@@ -19,9 +19,6 @@ from collections import deque
 from typing import Deque, Optional
 from zoneinfo import ZoneInfo
 
-MEME_CHANCE_GROUP = 0.035
-MEME_CHANCE_PRIVATE = 0.012
-MEME_COOLDOWN_SEC = 420.0
 MEME_HISTORY_SIZE = 24
 MEME_DAILY_HISTORY_SIZE = 220
 MEME_MIN_HISTORY = 2
@@ -34,7 +31,6 @@ MEME_LLM_MODEL = os.getenv("MEME_LLM_MODEL", "gpt-4o-mini")
 MEME_LLM_CHANCE = float(os.getenv("MEME_LLM_CHANCE", "0.85"))
 MEME_LLM_TIMEOUT_SEC = float(os.getenv("MEME_LLM_TIMEOUT_SEC", "12"))
 MEME_LLM_HISTORY_LINES = int(os.getenv("MEME_LLM_HISTORY_LINES", "40"))
-MEME_FORCE_COOLDOWN_SEC = 20.0
 MEME_FORCE_FALLBACK_PROMPT = "в чате тишина, все притворяются что макет гуд, а дедлайн горит"
 DURDACH_SCHEDULED_CHANCE = float(os.getenv("DURDACH_SCHEDULED_CHANCE", "0.45"))
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -240,6 +236,23 @@ _last_state_save = 0.0
 _state_dirty = False
 STATE_SAVE_INTERVAL_SEC = 30.0
 MEME_STATE_VERSION = 2
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        print(f"⚠️ {name}={raw!r} не число, использую {default}")
+        return default
+
+
+MEME_CHANCE_GROUP = _float_env("MEME_CHANCE_GROUP", 0.035)
+MEME_CHANCE_PRIVATE = _float_env("MEME_CHANCE_PRIVATE", 0.012)
+MEME_COOLDOWN_SEC = _float_env("MEME_COOLDOWN_SEC", 420.0)
+MEME_FORCE_COOLDOWN_SEC = _float_env("MEME_FORCE_COOLDOWN_SEC", 20.0)
 
 
 def _normalize_openai_base_url() -> str:

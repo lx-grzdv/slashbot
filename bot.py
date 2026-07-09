@@ -832,8 +832,11 @@ async def check_sp9_group_access(app: Application) -> None:
         if status in ("administrator", "creator"):
             print(f"✅ SP9 works: бот — {status}, видит все сообщения группы")
             return
+        if getattr(me, "can_read_all_group_messages", False):
+            print("✅ SP9 works: бот не админ, но Group Privacy OFF — видит обычные сообщения группы")
+            return
         print("⚠️ SP9 works: бот НЕ администратор группы")
-        print("   При включённой Group Privacy бот не видит обычные сообщения → нет истории для мемов.")
+        print("   Group Privacy, похоже, включена: бот не видит обычные сообщения → нет рандомных ответов и истории для мемов.")
         print("   Исправление (одно из двух):")
         print("   1. @BotFather → Bot Settings → Group Privacy → Turn off")
         print("   2. Назначить @ag_slashbot администратором чата S:P9 works")
