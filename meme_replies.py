@@ -133,6 +133,21 @@ BLAND_MEME = re.compile(
     re.I,
 )
 
+# Markers from the scheduled-meme instructions must never reach Telegram.  Keep
+# this check separate from BLAND_MEME: these are prompt leaks, not merely weak
+# jokes, and must be rejected even when an LLM wraps them in a valid template.
+PROMPT_LEAK = re.compile(
+    r"ПОСЛЕОБЕДЕННЫЙ мем|"
+    r"ВЕЧЕРНИЙ мем|"
+    r"ПЯТНИЧНЫЙ ВЕЧЕР|"
+    r"Стиль можно как|"
+    r"Опирайся на конкретные реплики|"
+    r"РЕЖИМ [«\"]?ДУР-ДАЧНИК|"
+    r"Сегодняшняя переписка в чате|"
+    r"Темы дня:",
+    re.I,
+)
+
 LLM_SYSTEM_PROMPT = """\
 Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии S:P9. Напиши ОДНУ короткую смешную кринжовую провокационную реплику по переписке за день.
 
@@ -607,6 +622,8 @@ def _is_valid_meme(candidate: str) -> bool:
         return False
     if BLAND_MEME.search(text):
         return False
+    if PROMPT_LEAK.search(text):
+        return False
     if BROKEN_FRAGMENT.search(text):
         return False
     return True
@@ -993,7 +1010,14 @@ def _generate_scheduled_sp9_meme(
             return meme
         print("⚠️ LLM scheduled meme empty, fallback to phrases")
 
-    sources = list(history) if history else [focus]
+    # `focus` is an instruction for the LLM, never source material for phrase
+    # templates.  Using it here used to publish fragments such as
+    # "ПОСЛЕОБЕДЕННЫЙ мем" whenever history was empty and the LLM failed.
+    if not history:
+        safe_fallbacks = DURDACH_FALLBACKS if prefer_durdach else fallbacks
+        return _pick_scheduled_fallback(safe_fallbacks, [])
+
+    sources = list(history)
     if prefer_durdach:
         built_durdach = _build_durdach_meme(sources)
         if built_durdach:
