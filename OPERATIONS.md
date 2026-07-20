@@ -209,6 +209,7 @@ Mounting volume on: ...
 | `⚠️ LLM: HTTP 400` | Проверь `OPENAI_API_KEY`, `MEME_LLM_MODEL`, `OPENAI_BASE_URL` |
 | Нет `📨 Получено сообщение` в группе | Group Privacy OFF или бот — админ |
 | Нет плановых мемов в логах | Старый деплой; нужен коммит с scheduled memes |
+| В меме видны `ПОСЛЕОБЕДЕННЫЙ мем`, `Стиль можно как` или другая инструкция | Немедленно `SP9_SCHEDULED_MEME_ENABLED=0` + redeploy; затем проверить деплой `cb300a3` и разбор в [MEME_REPLIES.md](MEME_REPLIES.md#инцидент-2026-07-13-утечка-focus-промпта) |
 | `❌ Другой экземпляр slashbot уже запущен` | Второй `start_both.py` локально — закрой |
 
 Полный список: [RAILWAY_SETUP.md](RAILWAY_SETUP.md) → «Если что-то пошло не так».
@@ -251,6 +252,8 @@ Mounting volume on: ...
 |----------|--------------|
 | `SP9_WORKS_CHAT_ID` | `-1002413642408` |
 | `SP9_SCHEDULED_MEME_ENABLED` | `1` |
+| `DURDACH_SCHEDULED_CHANCE` | `0.45` |
+| `SMAEV_SCHEDULED_CHANCE` | `0.25` |
 | `SP9_AFTERNOON_MEME_HOUR` | `15` |
 | `SP9_EVENING_MEME_HOUR` | `18` |
 

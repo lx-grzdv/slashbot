@@ -16,7 +16,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import deque
-from typing import Deque, Optional
+from typing import Callable, Deque, Optional
 from zoneinfo import ZoneInfo
 
 MEME_HISTORY_SIZE = 24
@@ -33,6 +33,7 @@ MEME_LLM_TIMEOUT_SEC = float(os.getenv("MEME_LLM_TIMEOUT_SEC", "12"))
 MEME_LLM_HISTORY_LINES = int(os.getenv("MEME_LLM_HISTORY_LINES", "40"))
 MEME_FORCE_FALLBACK_PROMPT = "в чате тишина, все притворяются что макет гуд, а дедлайн горит"
 DURDACH_SCHEDULED_CHANCE = float(os.getenv("DURDACH_SCHEDULED_CHANCE", "0.45"))
+SMAEV_SCHEDULED_CHANCE = float(os.getenv("SMAEV_SCHEDULED_CHANCE", "0.25"))
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
 
 SILENCE_MEME_ENABLED = os.getenv("SILENCE_MEME_ENABLED", "1").strip().lower() not in ("0", "false", "no")
@@ -49,52 +50,52 @@ SP9_SCHEDULED_MEME_ENABLED = os.getenv("SP9_SCHEDULED_MEME_ENABLED", "1").strip(
 )
 
 SP9_AFTERNOON_MEME_PROMPT = (
-    "после обеда в рабочем чате, все в полусне, макеты висят, синк был, а прогресса ноль"
+    "после обеда мозг ещё грузится, но команда вернулась и готова дожать главное"
 )
 SP9_EVENING_MEME_PROMPT = (
-    "вечер буднего дня, пора сворачиваться, но все ещё притворяются что доделают макет"
+    "вечер буднего дня: спокойно собрать главное, закрыть хвосты без геройства и уйти отдыхать"
 )
 SP9_EVENING_FRIDAY_MEME_PROMPT = (
-    "пятница вечер, скоро дудосинг, все притворяются что успели до выходных"
+    "пятница вечер: зафиксировать победы недели, отпустить остальное и пойти отдыхать без чувства вины"
 )
 
 SP9_AFTERNOON_FALLBACKS = (
-    "после обеда мозг в рендере, а ты всё ещё в фигме — классика",
-    "обед прошёл, макет нет, синк был — зашкварный послеобеденный шаблон",
-    "полтретьего: все притворяются что гуд, а глаза на пол-экрана",
-    "послеобеденный кринж: {snippet} — и это мы называем продуктивностью",
-    "я в своём послеобеденном познании настолько преисполнился, что {snippet} мне уже как триллионный рендер",
-    "это разговор освобождённого от дедлайна существа, идущего к кофе после «{snippet}»",
+    "после обеда мозг ещё в рендере, но руки помнят — сейчас дожмём красиво",
+    "синк был, кофе есть, команда в сборе — погнали превращать «почти» в «готово»",
+    "полтретьего — самое время выдохнуть, собраться и сделать красиво",
+    "после «{snippet}» план простой: выдохнули, собрались и дожали главное",
+    "«{snippet}» — не тупик, а тот самый кадр, после которого макет начнёт собираться",
+    "кофе налит, фигма открыта, «{snippet}» понято — поехали, мы это вывезем",
 )
 
 SP9_EVENING_FALLBACKS = (
-    "вечер, пора домой, но макет всё ещё «почти гуд»",
-    "ну всё, сворачиваемся — завтра снова притворимся что успеем",
-    "18:00: дедлайн завтра, а сегодня уже морально в дудосинге",
-    "на ночь глядя: {snippet} — звучит как план на завтра",
+    "вечер близко: ещё один точный рывок — и завтрашние мы скажем себе спасибо",
+    "собираем хвосты без геройства: главное дожмём, остальное спокойно дождётся завтра",
+    "18:00: не геройствуем, а спокойно дожимаем главное — мы вывезем",
+    "на ночь глядя «{snippet}» уже не проблема, а последний шаг перед «готово»",
 )
 
 SP9_EVENING_FRIDAY_FALLBACKS = (
-    "пятница вечер — официально можно притвориться что всё залили",
-    "ну всё, выходные: макеты сами себя не сделают, но мы попробуем не думать",
-    "скоро дудосинг, а макет всё ещё «на финале» — классика пятницы",
-    "пятничный финал: {snippet} — и в понедельник снова «почти гуд»",
+    "пятница вечер: фиксируем победы, отпускаем фигму и идём отдыхать как люди",
+    "что успели — молодцы, остальное переживёт выходные; команда важнее макета",
+    "финальный рывок без геройства: закрываем главное и с чистой совестью идём отдыхать",
+    "пятничный итог: «{snippet}»; забираем опыт, оставляем тревогу и спокойно отдыхаем",
 )
 
 SP9_SLOT_LLM_FOCUS = {
     "afternoon": (
-        "ПОСЛЕОБЕДЕННЫЙ мем (15:00 МСК): полусон, макеты висят, прогресса ноль. "
-        "Стиль можно как кринж S:P9, так и пафос «идущего к реке». "
+        "ПОСЛЕОБЕДЕННЫЙ мем (15:00 МСК): мозг ещё грузится, но команда возвращается в ритм. "
+        "Сделай поддерживающую шутку: поддень рабочий хаос, но заверши уверенным движением вперёд. "
         "Опирайся на конкретные реплики из переписки ниже; не повторяй старые шутки про sync/checkout/espresso."
     ),
     "evening": (
-        "ВЕЧЕРНИЙ мем (18:00 МСК): пора сворачиваться, но все притворяются что доделают. "
-        "Стиль можно как кринж S:P9, так и пафос «идущего к реке» / Дур-Дачника. "
+        "ВЕЧЕРНИЙ мем (18:00 МСК): собрать главное без геройства и закончить день с ощущением движения. "
+        "Шутка должна поддержать команду, а не обесценивать её работу. "
         "Опирайся на конкретные реплики из переписки ниже; не повторяй старые шутки про sync/checkout/espresso."
     ),
     "evening_friday": (
-        "ПЯТНИЧНЫЙ ВЕЧЕР (18:00 МСК): напутствие на выходные, дудосинг, макет «на финале». "
-        "Особенно уместен пафос «идущего к реке»: отпустить эго, дедлайны и фигму. "
+        "ПЯТНИЧНЫЙ ВЕЧЕР (18:00 МСК): зафиксировать победы недели и отпустить остальное без чувства вины. "
+        "Дай тёплое, смешное напутствие: команда важнее дедлайна. "
         "Опирайся на конкретные реплики из переписки ниже; не повторяй старые шутки про sync/checkout/espresso."
     ),
 }
@@ -104,26 +105,54 @@ DURDACH_LLM_FOCUS = (
     "без длинного псевдофилософского монолога и без цитирования «триллионов планет». "
     "Рабочий бред из чата объясни через реку, сапоги, тину, термос, чай, пень, ведро, лодку, "
     "комаров, камыш, грязь или бесклёвье. Говори коротко, рублено: 1–2 фразы. "
-    "Можно мягко поддеть: карась городской, пень с амбициями, чудо огородное, лапоть глянцевый, "
-    "философ с ведром. Punchline должен быть про конкретный макет/синк/ноукод/checkout/коммент из чата."
+    "Можно мягко поддеть рабочий хаос, но не людей. Punchline должен быть про конкретный "
+    "макет/синк/ноукод/checkout/коммент из чата и заканчиваться поддержкой: дойдём, дожмём, вывезем."
 )
 
 DURDACH_FALLBACKS = (
-    "мне бы к камышам, а не к этому «{snippet}» — сапог в тине и то понятнее держится",
-    "«{snippet}» лежит как ведро без ручки: вроде вещь, а нести стыдно",
-    "ну что, караси городские, «{snippet}» у вас сегодня как бесклёвье: все смотрят и делают вид, что процесс идёт",
-    "синк ваш нервный, как карась перед грозой; после «{snippet}» я бы чай налил и не трогал фигму",
-    "ноукод сегодня как берег после дождя: уверенно идёшь в «{snippet}», потом молча вытаскиваешь сапоги",
-    "у воды и дурак мыслит глубже, а у нас «{snippet}» — пень с амбициями и комментом во фрейме",
-    "сапоги — это уважение к действительности, а «{snippet}» — просто тропа в тину с красивым названием",
-    "где тина, там и философия; где «{snippet}», там дизайнеры опять делают вид, что клёв будет",
+    "«{snippet}» — берег после дождя: скользко, но сапоги есть; дойдём и макет дожмём",
+    "после «{snippet}» самое время налить чаю, подтянуть сапоги и двигаться дальше",
+    "ну что, караси городские, «{snippet}» пошумело как камыш на ветру — а теперь спокойно соберём макет",
+    "синк ваш нервный, как карась перед грозой; но после «{snippet}» чай налит и план собран — вывезем",
+    "ноукод сегодня как берег после дождя: в «{snippet}» скользко, зато мы уже знаем где тропа к готовому",
+    "у воды мысли ровнее: «{snippet}» разберём, коммент закроем и до берега дойдём",
+    "сапоги — это уважение к действительности; после «{snippet}» затянули шнурки и погнали к готовому",
+    "где тина, там и философия; где «{snippet}», там мы ещё раз соберёмся и вытянем макет на сухое",
 )
 
 DURDACH_MASHUP_TEMPLATES = (
-    "сначала «{a}», потом «{b}» — ну всё, лапти сушить, макет в тине",
-    "«{a}» и «{b}» — два поплавка в одном болоте, оба делают вид что это стратегия",
-    "после «{a}» и «{b}» я понял: город учит спешить, фигма учит не выпендриваться",
-    "«{a}», потом «{b}» — чай в термосе горячий, а планы как всегда сырые",
+    "сначала «{a}», потом «{b}» — сапоги затянули, тропу нашли, до готового дойдём",
+    "«{a}» и «{b}» — два поплавка на одной реке; соберём их в один план и вывезем",
+    "после «{a}» и «{b}» ясно одно: фигма учит терпению, а команда — дожимать",
+    "«{a}», потом «{b}» — чай в термосе горячий, план собран, погнали к берегу",
+)
+
+# Безопасная пародийная стилизация по мотивам речевого архетипа из отчёта:
+# коротко, конкретно, через нагрузку и результат. Не изображаем реального
+# человека и не используем его дословные цитаты или биографические детали.
+SMAEV_LLM_FOCUS = (
+    "РЕЖИМ «СИЛОВИК БЕЗ ГЛЯНЦА»: это пародийный архетип, не изображай Андрея Смаева "
+    "и не пиши от его имени. Говори телеграфно: 2–4 коротких предложения. Переведи рабочий "
+    "контекст в нагрузку, подходы, режим, технику, восстановление и результат. Структура: "
+    "факт → нагрузка/ощущение → сухой вывод. Экстремальный рабочий хаос подавай буднично. "
+    "Не используй реальные цитаты, «ребятушки», Саров, завод, семью, здоровье или другие "
+    "биографические детали. Реплика должна поддерживать команду: спокойно дожать работу, без геройства."
+)
+
+SMAEV_FALLBACKS = (
+    "Так, народ. «{snippet}». Нагрузка нормальная. Спокойно дожимаем дальше.",
+    "Режим сбит. «{snippet}». Ничего страшного, работаем из того, что есть.",
+    "Макет тяжёлый. Подход рабочий. После «{snippet}» техника уже крепче.",
+    "Условия неидеальные. «{snippet}». Без цирка, просто ещё один точный подход.",
+    "«{snippet}» хорошо нагрузило систему. Отдохнули, поправили технику, дожали.",
+    "Сегодня «{snippet}». Тяжело было. Работу сделали. Значит, не зря открывали фигму.",
+)
+
+SMAEV_MASHUP_TEMPLATES = (
+    "Сначала «{a}». Потом «{b}». Объём хороший. Работаем дальше.",
+    "«{a}». «{b}». Режим тяжёлый, но подход засчитан.",
+    "Было «{a}», добавили «{b}». Система забилась. Результат есть.",
+    "«{a}», потом «{b}». Без геройства. Технику держим, макет дожимаем.",
 )
 
 BLAND_MEME = re.compile(
@@ -143,20 +172,39 @@ PROMPT_LEAK = re.compile(
     r"Стиль можно как|"
     r"Опирайся на конкретные реплики|"
     r"РЕЖИМ [«\"]?ДУР-ДАЧНИК|"
+    r"РЕЖИМ [«\"]?СИЛОВИК БЕЗ ГЛЯНЦА|"
     r"Сегодняшняя переписка в чате|"
     r"Темы дня:",
     re.I,
 )
 
-LLM_SYSTEM_PROMPT = """\
-Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии S:P9. Напиши ОДНУ короткую смешную кринжовую провокационную реплику по переписке за день.
+# Scheduled messages should leave the team with energy, not turn routine chaos
+# into a verdict about their work. The first regex blocks known bleak endings;
+# the second requires a concrete cue of movement, support, or healthy rest.
+DISCOURAGING_SCHEDULED_MEME = re.compile(
+    r"нет прогресса|прогресса? ноль|макеты? висят|притворяются|мёртв|нести стыдно|"
+    r"дедлайн всё ещё вчера|ноукодный ад|зашквар|всрат|план говно|жопа горит",
+    re.I,
+)
 
-СТИЛЬ (обязательно — выбери ОДИН режим на ответ):
-1) кринж S:P9: стыдно-смешно, пассивная агрессия, абсурд, как будто дедлайн уже съел уважение
+ENCOURAGING_SCHEDULED_MEME = re.compile(
+    r"дожм|вывез|погнал|поехал|вперёд|соб[еи]р|сдела|готов|движ|двига|дойд|вытян|разбер|"
+    r"рывок|молодц|побед|отдых|выдохн|спокойно|работаем|крепче|подход|результат|техник|"
+    r"команда важнее|скажем себе спасибо",
+    re.I,
+)
+
+LLM_SYSTEM_PROMPT = """\
+Ты @ag_slashbot в рабочем Telegram-чате дизайн-студии S:P9. Напиши ОДНУ короткую смешную и поддерживающую реплику по переписке за день.
+
+СТИЛЬ (если пользовательский контекст ниже не закрепляет режим — случайно выбери ОДИН на ответ):
+1) кринж S:P9: стыдно-смешно, самоиронично и абсурдно, но по-доброму к команде
 2) «дур-дачник, идущий к реке»: грубовато-добродушный дачный чудик, который объясняет рабочий бред через реку, сапоги, тину, термос, чай, пень, ведро, лодку, комаров и бесклёвье; punchline обязательно про реальный рабочий бред из чата
+3) «силовик без глянца»: безопасный пародийный архетип, а не реальный человек; 2–4 короткие рубленые фразы про нагрузку, подходы, режим, технику и результат; факт → нагрузка → сухой поддерживающий вывод
 
 - рабочий мат уместно: бля, блэт, зашквар, всратость, говно, жопа горит, херово
-- искажай фразы из чата — уничижительно, но смешно; делай punchline, а не пересказ
+- искажай фразы из чата смешно, но не унижай людей и не обесценивай их работу; делай punchline, а не пересказ
+- шути над хаосом, процессом и фигмой, а не над способностями команды
 - референсы: дудосинг, ноукод, шакальные макеты, понаехали дизайнеры, рендер, фигма, синк, река, сапоги, тина, термос, камыш
 - лучше одна точная шутка про 1–2 события дня, чем общий комментарий «классика»
 - если историй мало — всё равно смешно выдумывай в стиле, но не залипай на одних и тех же словах
@@ -164,26 +212,34 @@ LLM_SYSTEM_PROMPT = """\
 ЗАПРЕЩЕНО:
 - bland корпоративный юмор («тишина в чате», «на уровне гуд», «классика ахах» без укуса)
 - обрывки фраз и словесное месиво («че макетам», «типа норм макет» без смысла)
-- мотивация, советы, объяснения, нравоучения
+- корпоративная мотивация, советы, объяснения и нравоучения; поддержка должна звучать как живая реплика
+- безысходный финал: «всё мёртво», «прогресса ноль», «все притворяются»
 - @, ссылки, кавычки вокруг всего ответа
 - повторять вчерашние мемы про sync/checkout/espresso/коммент во фрейме — бери свежий угол
 - длинный монолог «я преисполнился на триллионах планет» — это уже заезжено; используй дачную предметность вместо цитат
+- изображать Андрея Смаева, писать от его имени, использовать его реальные цитаты, «ребятушки» или биографические детали
 
 ОБЯЗАТЕЛЬНО:
 - анализируй сообщения сегодняшнего дня и опирайся на 1–2 конкретные реплики, ЕСЛИ они есть
 - грамматически цельное предложение, чтобы было понятно без контекста чата
 - можно связать два события из чата в один абсурдный вывод
+- заканчивай живым импульсом: дожмём, вывезем, погнали, выдохнули и собрались
 - если в контексте есть список «темы дня», используй его как карту, но шути по реальным репликам ниже
 
 Примеры тона (кринж):
-- бля как же жопа горит от таких макетов
-- видимо через жопу ставили задачу и назвали хз как
-- ахах забыли очередь узбеков в рендер добавить
+- блэт, фигма опять проверяет нас на прочность — ничего, сейчас дожмём
+- макет сделал крюк, команда сделала выводы — погнали к красивому
+- дедлайн рычит, но мы громче — собрались и поехали
 
 Примеры тона (идущий к реке):
-- мне бы к камышам, а не к этому checkout — сапог в тине и то понятнее держится
-- коммент во фрейме лежит как ведро без ручки: вроде вещь, а нести стыдно
-- синк ваш нервный, как карась перед грозой; я бы чай налил и не трогал макет до утра
+- checkout как берег после дождя: скользко, но сапоги есть — дойдём
+- коммент во фрейме нашли, чай налили, план собрали — макет вывезем
+- синк нервный, как карась перед грозой; но мы тропу уже видим — погнали
+
+Примеры тона (силовик без глянца):
+- Макет тяжёлый. Подход рабочий. Дожимаем без геройства.
+- Режим сбит. Фигма грузится. Работаем из того, что есть.
+- Комментов много. Нагрузка хорошая. Технику держим, результат будет.
 
 До 180 символов. Только текст реплики."""
 
@@ -629,6 +685,15 @@ def _is_valid_meme(candidate: str) -> bool:
     return True
 
 
+def _is_inspiring_scheduled_meme(candidate: str) -> bool:
+    """Scheduled memes may tease the process, but must leave forward momentum."""
+    if not _is_valid_meme(candidate):
+        return False
+    if DISCOURAGING_SCHEDULED_MEME.search(candidate):
+        return False
+    return bool(ENCOURAGING_SCHEDULED_MEME.search(candidate))
+
+
 def _sanitize_llm_reply(raw: str) -> Optional[str]:
     text = raw.strip()
     if not text:
@@ -738,6 +803,7 @@ def _generate_meme_with_llm_retries(
     *,
     max_attempts: int = 3,
     focus: Optional[str] = None,
+    validator: Optional[Callable[[str], bool]] = None,
 ) -> Optional[str]:
     for attempt in range(1, max_attempts + 1):
         meme = _generate_meme_with_llm(
@@ -747,7 +813,7 @@ def _generate_meme_with_llm_retries(
             attempts=attempt,
             focus=focus,
         )
-        if meme:
+        if meme and (validator is None or validator(meme)):
             return meme
     return None
 
@@ -826,6 +892,29 @@ def _build_durdach_meme(source_texts: list[str]) -> Optional[str]:
 
     generic = "у воды и дурак мыслит глубже, а этот макет всё равно как ведро без ручки"
     return generic if _is_valid_meme(generic) else None
+
+
+def _build_smaev_meme(source_texts: list[str]) -> Optional[str]:
+    """Пародийный силовой архетип без цитат и имитации реального человека."""
+    phrases = _collect_phrases(source_texts)
+    snippet = _shorten_snippet(random.choice(phrases)) if phrases else "макет почти готов"
+
+    for _ in range(20):
+        if len(phrases) >= 2 and random.random() < 0.35:
+            raw_a, raw_b = random.sample(phrases, 2)
+            template = random.choice(SMAEV_MASHUP_TEMPLATES)
+            values = {"a": _shorten_snippet(raw_a), "b": _shorten_snippet(raw_b)}
+        else:
+            template = random.choice(SMAEV_FALLBACKS)
+            values = {"snippet": snippet}
+        try:
+            result = template.format(**values)
+        except (KeyError, IndexError):
+            continue
+        if _is_valid_meme(result):
+            return result
+
+    return _pick_scheduled_fallback(SMAEV_FALLBACKS, source_texts)
 
 
 def _shorten_snippet(text: str, max_len: int = 54) -> str:
@@ -949,13 +1038,43 @@ def _scheduled_durdach_chance(slot: str) -> float:
     return DURDACH_SCHEDULED_CHANCE
 
 
+def _scheduled_smaev_chance(slot: str) -> float:
+    if slot == "afternoon":
+        return min(1.0, SMAEV_SCHEDULED_CHANCE + 0.05)
+    if slot == "evening_friday":
+        return max(0.0, SMAEV_SCHEDULED_CHANCE - 0.05)
+    return SMAEV_SCHEDULED_CHANCE
+
+
+def _pick_scheduled_style(slot: str, history: list[str]) -> str:
+    if not history:
+        return "default"
+    durdach = max(0.0, min(1.0, _scheduled_durdach_chance(slot)))
+    smaev = max(0.0, min(1.0, _scheduled_smaev_chance(slot)))
+    total = durdach + smaev
+    if total > 1.0:
+        durdach /= total
+        smaev /= total
+    return random.choices(
+        ("default", "durdach", "smaev"),
+        weights=(max(0.0, 1.0 - durdach - smaev), durdach, smaev),
+        k=1,
+    )[0]
+
+
 def _should_use_durdach(slot: str, history: list[str]) -> bool:
+    """Совместимость с прежним внутренним API."""
     if not history:
         return False
     return random.random() < _scheduled_durdach_chance(slot)
 
 
-def _pick_scheduled_fallback(fallbacks: tuple[str, ...], history: list[str]) -> str:
+def _pick_scheduled_fallback(
+    fallbacks: tuple[str, ...],
+    history: list[str],
+    *,
+    validator: Callable[[str], bool] = _is_valid_meme,
+) -> str:
     phrases = _collect_phrases(history) if history else []
     snippet = random.choice(phrases) if phrases else "макет почти гуд"
     for template in random.sample(list(fallbacks), len(fallbacks)):
@@ -963,8 +1082,12 @@ def _pick_scheduled_fallback(fallbacks: tuple[str, ...], history: list[str]) -> 
             candidate = template.format(snippet=snippet) if "{snippet}" in template else template
         except (KeyError, IndexError):
             candidate = template
-        if _is_valid_meme(candidate):
+        if validator(candidate):
             return candidate
+    if history:
+        # A quoted chat snippet may itself contain a bleak phrase. Retry with a
+        # neutral snippet instead of letting that phrase bypass scheduled tone.
+        return _pick_scheduled_fallback(fallbacks, [], validator=validator)
     template = random.choice(fallbacks)
     try:
         return template.format(snippet=snippet) if "{snippet}" in template else template
@@ -977,16 +1100,19 @@ async def generate_sp9_scheduled_meme(chat_id: int, slot: str) -> Optional[str]:
     _, fallbacks = _scheduled_meme_config(slot)
     history = _today_history(chat_id) or list(_chat_history.get(chat_id, []))
     focus = SP9_SLOT_LLM_FOCUS.get(slot, SP9_SLOT_LLM_FOCUS["evening"])
-    prefer_durdach = _should_use_durdach(slot, history)
-    if prefer_durdach:
+    style = _pick_scheduled_style(slot, history)
+    if style == "durdach":
         focus = f"{focus}\n{DURDACH_LLM_FOCUS}"
+    elif style == "smaev":
+        focus = f"{focus}\n{SMAEV_LLM_FOCUS}"
 
     meme = await asyncio.to_thread(
         _generate_scheduled_sp9_meme,
         history,
         focus,
         fallbacks,
-        prefer_durdach,
+        style == "durdach",
+        style == "smaev",
     )
     return meme
 
@@ -996,6 +1122,7 @@ def _generate_scheduled_sp9_meme(
     focus: str,
     fallbacks: tuple[str, ...],
     prefer_durdach: bool = False,
+    prefer_smaev: bool = False,
 ) -> Optional[str]:
     if OPENAI_API_KEY:
         meme = _generate_meme_with_llm_retries(
@@ -1003,9 +1130,10 @@ def _generate_scheduled_sp9_meme(
             history,
             max_attempts=3,
             focus=focus,
+            validator=_is_inspiring_scheduled_meme,
         )
         if meme:
-            label = "durdach " if prefer_durdach else ""
+            label = "durdach " if prefer_durdach else "smaev " if prefer_smaev else ""
             print(f"🧠 LLM {label}scheduled meme: {meme}")
             return meme
         print("⚠️ LLM scheduled meme empty, fallback to phrases")
@@ -1014,20 +1142,40 @@ def _generate_scheduled_sp9_meme(
     # templates.  Using it here used to publish fragments such as
     # "ПОСЛЕОБЕДЕННЫЙ мем" whenever history was empty and the LLM failed.
     if not history:
-        safe_fallbacks = DURDACH_FALLBACKS if prefer_durdach else fallbacks
-        return _pick_scheduled_fallback(safe_fallbacks, [])
+        safe_fallbacks = (
+            DURDACH_FALLBACKS if prefer_durdach else SMAEV_FALLBACKS if prefer_smaev else fallbacks
+        )
+        return _pick_scheduled_fallback(
+            safe_fallbacks,
+            [],
+            validator=_is_inspiring_scheduled_meme,
+        )
 
     sources = list(history)
     if prefer_durdach:
         built_durdach = _build_durdach_meme(sources)
-        if built_durdach:
+        if built_durdach and _is_inspiring_scheduled_meme(built_durdach):
             return built_durdach
-        return _pick_scheduled_fallback(DURDACH_FALLBACKS, history)
+        return _pick_scheduled_fallback(
+            DURDACH_FALLBACKS,
+            history,
+            validator=_is_inspiring_scheduled_meme,
+        )
+    if prefer_smaev:
+        built_smaev = _build_smaev_meme(sources)
+        if built_smaev and _is_inspiring_scheduled_meme(built_smaev):
+            return built_smaev
+        return _pick_scheduled_fallback(
+            SMAEV_FALLBACKS,
+            history,
+            validator=_is_inspiring_scheduled_meme,
+        )
 
-    built = _build_meme(sources)
-    if built:
-        return built
-    return _pick_scheduled_fallback(fallbacks, history)
+    return _pick_scheduled_fallback(
+        fallbacks,
+        history,
+        validator=_is_inspiring_scheduled_meme,
+    )
 
 
 def mark_meme_sent(chat_id: int) -> None:

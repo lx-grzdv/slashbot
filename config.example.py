@@ -18,5 +18,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
 # SILENCE_MEME_CHECK_MIN=20             # проверка тишины каждые N минут
 # SILENCE_MEME_ENABLED=1                # 0 — выключить
 # SP9_SCHEDULED_MEME_ENABLED=1          # плановые мемы в S:P9 works (15:00 и 18:00 МСК)
+# DURDACH_SCHEDULED_CHANCE=0.45         # шанс дачно-речного стиля
+# SMAEV_SCHEDULED_CHANCE=0.25           # шанс пародийного силового стиля
 # SP9_AFTERNOON_MEME_HOUR=15
 # SP9_EVENING_MEME_HOUR=18
