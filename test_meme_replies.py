@@ -114,6 +114,25 @@ class ScheduledMemeSafetyTests(unittest.TestCase):
         self.assertEqual(reply, inspiring)
         self.assertEqual(generate.call_count, 2)
 
+    def test_generic_fallbacks_end_with_forward_momentum(self):
+        for template in meme_replies.MEME_TEMPLATES:
+            reply = template.format(snippet="аналитика подоспела")
+            with self.subTest(reply=reply):
+                self.assertTrue(meme_replies._is_inspiring_scheduled_meme(reply))
+
+        for template in meme_replies.MASHUP_TEMPLATES:
+            reply = template.format(a="аналитика готова", b="коммент добавили")
+            with self.subTest(reply=reply):
+                self.assertTrue(meme_replies._is_inspiring_scheduled_meme(reply))
+
+    def test_silence_prompts_are_supportive(self):
+        self.assertTrue(
+            meme_replies._is_inspiring_scheduled_meme(meme_replies.SILENCE_MEME_PROMPT)
+        )
+        self.assertTrue(
+            meme_replies._is_inspiring_scheduled_meme(meme_replies.MEME_FORCE_FALLBACK_PROMPT)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
