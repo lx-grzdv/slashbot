@@ -73,7 +73,8 @@ _conflict_times: list[float] = []
 
 # Фиксированное расписание для чата S:P9 works
 SP9_WORKS_CHAT_ID = int(os.getenv("SP9_WORKS_CHAT_ID", "-1002413642408"))
-SP9_SYNC_TEXT = "Синкуемся?"
+SP9_SYNC_MEET_URL = os.getenv("SP9_SYNC_MEET_URL", "https://meet.google.com/igb-ajsz-tss")
+SP9_SYNC_TEXT = f'<a href="{SP9_SYNC_MEET_URL}">Синкуемся?</a>'
 SP9_AFTERNOON_MEME_HOUR = int(os.getenv("SP9_AFTERNOON_MEME_HOUR", "15"))
 SP9_AFTERNOON_MEME_MIN = int(os.getenv("SP9_AFTERNOON_MEME_MIN", "0"))
 SP9_EVENING_MEME_HOUR = int(os.getenv("SP9_EVENING_MEME_HOUR", "18"))
@@ -847,7 +848,12 @@ async def check_sp9_group_access(app: Application) -> None:
 async def send_sp9_sync_message(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет в S:P9 works сообщение 'Синкуемся?' по будням в 12:00 МСК."""
     try:
-        await context.bot.send_message(chat_id=SP9_WORKS_CHAT_ID, text=SP9_SYNC_TEXT)
+        await context.bot.send_message(
+            chat_id=SP9_WORKS_CHAT_ID,
+            text=SP9_SYNC_TEXT,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
         print(f"✅ SP9 sync отправлен в чат {SP9_WORKS_CHAT_ID}")
     except Exception as e:
         print(f"❌ Ошибка SP9 sync в чат {SP9_WORKS_CHAT_ID}: {e}")
@@ -1214,7 +1220,7 @@ def main() -> None:
     print(f"   🎉 ПЯТНИЧНАЯ: каждую пятницу в 17:50 МСК")
     print(f"      💬 Сообщение: 'Эх, а скоро дудосинг...'")
     print(f"   🕛 S:P9 works (ПН-ПТ): в 12:00 МСК")
-    print(f"      💬 Сообщение: '{SP9_SYNC_TEXT}'")
+    print(f"      💬 Сообщение: 'Синкуемся?' → {SP9_SYNC_MEET_URL}")
     if SP9_SCHEDULED_MEME_ENABLED:
         print(
             f"   🌤️ S:P9 послеобеденный мем (ПН-ПТ): "
