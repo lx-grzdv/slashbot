@@ -73,7 +73,7 @@ _conflict_times: list[float] = []
 
 # Фиксированное расписание для чата S:P9 works
 SP9_WORKS_CHAT_ID = int(os.getenv("SP9_WORKS_CHAT_ID", "-1002413642408"))
-SP9_SYNC_MEET_URL = os.getenv("SP9_SYNC_MEET_URL", "https://meet.google.com/igb-ajsz-tss")
+SP9_SYNC_MEET_URL = os.getenv("SP9_SYNC_MEET_URL", "https://telemost.yandex.ru/j/14970983371590")
 SP9_SYNC_TEXT = f'<a href="{SP9_SYNC_MEET_URL}">Синкуемся?</a>'
 SP9_AFTERNOON_MEME_HOUR = int(os.getenv("SP9_AFTERNOON_MEME_HOUR", "15"))
 SP9_AFTERNOON_MEME_MIN = int(os.getenv("SP9_AFTERNOON_MEME_MIN", "0"))
