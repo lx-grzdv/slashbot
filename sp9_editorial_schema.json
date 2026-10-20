@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rows", "omitted"],
+  "properties": {
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["section", "task_ids", "labels", "summary", "source_ids"],
+        "properties": {
+          "section": {"type": "string", "enum": ["attention", "new", "progress", "completed"]},
+          "task_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "labels": {"type": "array", "minItems": 1, "items": {"type": "string", "maxLength": 80}},
+          "summary": {"type": "string", "maxLength": 1000},
+          "source_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+        }
+      }
+    },
+    "omitted": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_ids", "reason"],
+        "properties": {
+          "source_ids": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "reason": {"type": "string", "enum": ["priority_only", "intermediate_status", "repeated_detail", "unspecified_content", "historical_after_completion"]}
+        }
+      }
+    }
+  }
+}

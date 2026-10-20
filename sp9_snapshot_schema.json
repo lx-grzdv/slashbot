@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "collection_complete",
+    "board_counts",
+    "tasks",
+    "updates",
+    "motion_tasks",
+    "warnings"
+  ],
+  "properties": {
+    "collection_complete": {
+      "type": "boolean"
+    },
+    "board_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_status", "to_do", "in_progress", "review", "completed"],
+      "properties": {
+        "no_status": {"type": "integer", "minimum": 0},
+        "to_do": {"type": "integer", "minimum": 0},
+        "in_progress": {"type": "integer", "minimum": 0},
+        "review": {"type": "integer", "minimum": 0},
+        "completed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "url", "status", "due_date", "assignees", "comments", "confidence"],
+        "properties": {
+          "title": {"type": "string"},
+          "url": {"type": ["string", "null"]},
+          "status": {
+            "type": "string",
+            "enum": ["No Status", "To Do", "In Progress", "Review", "Completed"]
+          },
+          "due_date": {"type": ["string", "null"]},
+          "assignees": {"type": "array", "items": {"type": "string"}},
+          "comments": {"type": ["integer", "null"], "minimum": 0},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "updates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_title", "task_url", "kind", "details", "occurred_at", "confidence"],
+        "properties": {
+          "task_title": {"type": "string"},
+          "task_url": {"type": ["string", "null"]},
+          "kind": {"type": "string"},
+          "details": {"type": "string"},
+          "occurred_at": {"type": ["string", "null"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "motion_tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "url", "status", "due_date", "assignee", "progress", "confidence"],
+        "properties": {
+          "title": {"type": "string"},
+          "url": {"type": ["string", "null"]},
+          "status": {"type": ["string", "null"]},
+          "due_date": {"type": ["string", "null"]},
+          "assignee": {"type": ["string", "null"]},
+          "progress": {"type": ["string", "null"]},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  }
+}

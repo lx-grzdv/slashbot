@@ -147,3 +147,6 @@ scheduled_messages.json
 .slashbot_write_probe
 .bot.lock
 
+# Local S:P9 browser profile, captures and daily snapshots
+.sp9_data/
+.sp9_browser_profile/
