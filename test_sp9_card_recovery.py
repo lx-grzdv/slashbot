@@ -29,10 +29,18 @@ class CardRecoveryTests(unittest.TestCase):
         page, edited, actions = MagicMock(), MagicMock(), MagicMock()
         page.locator.return_value.count.return_value = 0
         edited.first.click.side_effect = RuntimeError('Edited unavailable')
-        page.get_by_role.side_effect = lambda role, **kw: actions if kw['name'] == 'Actions' else edited
+
+        def by_role(role, **kw):
+            name = kw.get('name')
+            if hasattr(name, 'match') and name.match('Actions'):
+                return actions
+            return edited
+
+        page.get_by_role.side_effect = by_role
         activity._open_history(page)
-        actions.click.assert_called_once()
-        page.get_by_text.assert_called_once_with('Updates & analytics', exact=True)
+        actions.first.click.assert_called_once()
+        called = page.get_by_text.call_args
+        self.assertTrue(called.args[0].match('Updates & analytics'))
         page.wait_for_function.assert_called_once()
 
     def test_both_openers_failing_does_not_claim_history_is_complete(self):

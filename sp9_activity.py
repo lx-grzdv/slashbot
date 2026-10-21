@@ -243,12 +243,18 @@ def _open_history(page: Any) -> None:
         for method in ('edited', 'actions'):
             try:
                 if method == 'edited':
-                    # The visible edited-time control opens Updates directly.
-                    page.get_by_role('button', name=re.compile(r'^Edited', re.I)).first.click(timeout=5000)
+                    # Visible edited-time control opens Updates; EN or RU UI.
+                    page.get_by_role(
+                        'button',
+                        name=re.compile(r'^(Edited|Изменено)', re.I),
+                    ).first.click(timeout=12000)
                 else:
-                    page.get_by_role('button', name='Actions', exact=True).click(timeout=5000)
-                    page.get_by_text('Updates & analytics', exact=True).click(timeout=5000)
-                panel.wait_for(state='visible', timeout=8000)
+                    actions = page.get_by_role('button', name=re.compile(r'^(Actions|Действия)$', re.I))
+                    actions.first.click(timeout=8000)
+                    page.get_by_text(
+                        re.compile(r'^(Updates & analytics|Updates|Обновления)$', re.I),
+                    ).first.click(timeout=8000)
+                panel.wait_for(state='visible', timeout=12000)
                 break
             except Exception as exc:
                 failures.append(f'{method}: {exc}')
